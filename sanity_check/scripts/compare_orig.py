@@ -1,5 +1,5 @@
-"""Compare a WildChat-50m shard against the original WildChat-1M
-conversations."""
+"""Compare a WildChat-50m shard against the original WildChat-1M conversations.
+"""
 
 from collections import Counter
 import glob

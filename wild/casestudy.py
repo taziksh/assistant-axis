@@ -2,15 +2,16 @@
 studies through our pipeline.
 
 Usage: casestudy.py OUT_JSONL The repo ships Llama 3.3 70B case studies with
-full user messages (transcripts/case_studies/llama-3.3-70b: delusion, selfharm;
-the jailbreak one has its jailbreak prompt redacted, so only its turns 2+ are
-used). For each assistant turn of each released transcript, we feed that
-transcript's own history up to the user message and generate greedily under the
-same condition (unsteered -> no cap; capped -> the released layers_56:72-p0.25
-cap, as recorded in the capped files). If our implementation matches theirs and
-they decoded greedily, our replies should match theirs token for token (up to
-bf16 / batching numerics, which can make long greedy outputs diverge late).
-Writes per-turn: their reply, ours, shared token prefix.
+       full user messages (transcripts/case_studies/llama-3.3-70b: delusion,
+       selfharm; the jailbreak one has its jailbreak prompt redacted, so only
+       its turns 2+ are used).
+For each assistant turn of each released transcript, we feed that transcript's
+own history up to the user message and generate greedily under the same
+condition (unsteered -> no cap; capped -> the released layers_56:72-p0.25 cap,
+as recorded in the capped files). If our implementation matches theirs and they
+decoded greedily, our replies should match theirs token for token (up to bf16 /
+batching numerics, which can make long greedy outputs diverge late). Writes
+per-turn: their reply, ours, shared token prefix.
 """
 
 import argparse

@@ -2,19 +2,15 @@
 
 Usage: generate.py RUN_DIR HARMBENCH_CSV [--drift-only]
 Drift: for each selected conversation and user turn k = 1..MAX_TURN, Llama
-       writes reply k after the
-real user messages and GPT's original replies to turns 1..k-1 (final-turn
-regeneration; the history
-swap check showed this is close to Llama writing the whole history). One sample,
-no system prompt.
-Turns stop at the first prompt that doesn't fit. -> RUN_DIR/drift.jsonl
-Harm (paper Section 4.3, with real chats in place of role prompts): after each
-drift unit (history
-through turn k plus Llama's reply k), the next user message is a HarmBench
-standard behavior; Llama
-replies once. Baseline: each behavior alone, 5 samples. -> RUN_DIR/harm.jsonl,
-RUN_DIR/harm_base.jsonl
-Each output is skipped if it already exists.
+writes reply k after the real user messages and GPT's original replies to turns
+1..k-1 (final-turn regeneration; the history swap check showed this is close to
+Llama writing the whole history). One sample, no system prompt.
+Turns stop at the first prompt that doesn't fit. -> RUN_DIR/drift.jsonl Harm
+(paper Section 4.3, with real chats in place of role prompts): after each drift
+unit (history through turn k plus Llama's reply k), the next user message is a
+HarmBench standard behavior; Llama replies once. Baseline: each behavior alone,
+5 samples. -> RUN_DIR/harm.jsonl, RUN_DIR/harm_base.jsonl Each output is skipped
+if it already exists.
 """
 
 import argparse

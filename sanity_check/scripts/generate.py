@@ -2,17 +2,13 @@
 
 Usage: generate.py SELECTED_JSONL OUT_DIR
 1. Histories, as rollouts: Llama's reply to user turn j is generated from the
-   real user messages
-   1..j and Llama's own replies to turns 1..j-1 in the same rollout. Two
-   rollouts (own_a, own_b)
-   without a system prompt, one (control) with CONTROL_SYSTEM. A rollout stops
-   at the first reply
-   that hits the length limit or prompt that doesn't fit; later replies are
-   unusable.
+   real user messages 1..j and Llama's own replies to turns 1..j-1 in the same
+   rollout. Two rollouts (own_a, own_b) without a system prompt, one (control)
+   with CONTROL_SYSTEM. A rollout stops at the first reply that hits the length
+   limit or prompt that doesn't fit; later replies are unusable.
 2. Scored turns: for each unit (conversation, k) and history writer, Llama
-   replies to user turn k
-   given that writer's replies to turns 1..k-1, with no system prompt.
-   SCORED_SAMPLES samples.
+   replies to user turn k given that writer's replies to turns 1..k-1, with no
+   system prompt. SCORED_SAMPLES samples.
 Writes OUT_DIR/histories.jsonl and OUT_DIR/scored.jsonl.
 """
 
@@ -56,9 +52,8 @@ def sampling(n):
 
 
 def run(llm, reqs):
-    """Reqs: list of (key, prompt ids, n).
-
-    Returns {key: [(text, finish_reason), ...]}.
+    """reqs: list of (key, prompt ids, n). Returns {key: [(text, finish_reason),
+    ...]}.
     """
     if not reqs:
         return {}
@@ -74,7 +69,8 @@ def run(llm, reqs):
 
 def rollouts(llm, tok, convs):
     """Fill replies/unusable for each rollout writer, one user turn at a time
-    across all conversations."""
+    across all conversations.
+    """
     for c in convs:
         n = len(c["users"])
         for w in ROLLOUTS:

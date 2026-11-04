@@ -1,24 +1,20 @@
 """Reproduce the paper's Section 4.3 openings: role system prompt + an unrelated
 question (first turn).
 
-Usage: roles_build.py RUN_DIR [--questions FROM TO] [--no-role]
---questions 0 2 builds 275 roles x the first 2 of the 10 questions (550
-openings; the first stage, 2026-11-03).
---no-role builds the no-persona baseline: the same 10 questions with no system
-prompt.
+Usage: roles_build.py RUN_DIR [--questions FROM TO] [--no-role] --questions 0 2
+       builds 275 roles x the first 2 of the 10 questions (550 openings; the
+       first stage, 2026-11-03). --no-role builds the no-persona baseline: the
+       same 10 questions with no system prompt.
 The paper combined 275 role system prompts with 10 questions (2,750 first
-turns), then asked one harmful
-question per second turn. It released the role prompts (data/roles/instructions,
-276 files: the 275 roles
-plus "default", left out here) and its extraction questions
-(data/extraction_questions.jsonl, 240), but
-not which instruction variant or which 10 questions it used. We use one random
-variant per opening and
-the same 10 random extraction questions for every role (both seeded).
+turns), then asked one harmful question per second turn. It released the role
+prompts (data/roles/instructions, 276 files: the 275 roles plus "default", left
+out here) and its extraction questions (data/extraction_questions.jsonl, 240),
+but not which instruction variant or which 10 questions it used. We use one
+random variant per opening and the same 10 random extraction questions for every
+role (both seeded).
 Writes RUN_DIR/selected.jsonl in the format harm_wild.py and activations.py read
-(one user turn, a
-system prompt), so the rest of the pipeline (pool -> activations -> harm) is
-unchanged.
+(one user turn, a system prompt), so the rest of the pipeline (pool ->
+activations -> harm) is unchanged.
 """
 
 import argparse

@@ -3,8 +3,7 @@ no system prompt), N samples.
 
 Usage: alone.py OUT_JSONL QUESTIONS_JSONL [QUESTIONS_JSONL ...] [--samples N]
 Same settings as harm_wild.py (vLLM, temp 0.7, top-p 0.9, HARM_NEW_TOKENS). Rows
-match harm_wild.jsonl, so
-judge_paper.py reads them (request = the question).
+match harm_wild.jsonl, so judge_paper.py reads them (request = the question).
 """
 
 import argparse

@@ -1,12 +1,13 @@
 """Collect candidate WildChat-4.8M conversations for the drift, harm and capping
 experiments (CPU).
 
-Usage: build.py OUT_JSONL [--others N] [--max-files M] Keeps English
-conversations with >= 6 user turns and clean user/assistant alternation.
-Therapy-like and AI-self-reflection chats are rare, so every conversation that
-hits the keyword screen is kept; of the rest, a random N are kept (coding and
-writing are common). The LLM judge picks domains later. Rows: hash, model,
-users, gpt (original replies), kw (keyword screens hit). Shuffled.
+Usage: build.py OUT_JSONL [--others N] [--max-files M]
+Keeps English conversations with >= 6 user turns and clean user/assistant
+alternation. Therapy-like and AI-self-reflection chats are rare, so every
+conversation that hits the keyword screen is kept; of the rest, a random N are
+kept (coding and writing are common). The LLM judge picks domains later.
+Rows: hash, model, users, gpt (original replies), kw (keyword screens hit).
+Shuffled.
 """
 
 import argparse

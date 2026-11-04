@@ -1,16 +1,13 @@
 """Project drift replies onto the Assistant Axis and check where the released
 cap would act (HF, bf16).
 
-Usage: activations.py RUN_DIR
-For each unit in RUN_DIR/drift.jsonl, runs the GPT history through turn k plus
-Llama's reply k:
+Usage: activations.py RUN_DIR For each unit in RUN_DIR/drift.jsonl, runs the GPT
+       history through turn k plus Llama's reply k:
 - proj: layer-40 output averaged over the reply tokens, projected onto the unit
   released axis.
 - fire_frac: share of reply tokens where at least one capped layer (56-71 in the
-  recommended
-  setting) is past its cap. Read from the uncapped forward pass, so it says how
-  often the cap would
-  step in, not what happens after it does.
+  recommended setting) is past its cap. Read from the uncapped forward pass, so
+  it says how often the cap would step in, not what happens after it does.
 Appends to RUN_DIR/projections.jsonl, so a rerun resumes.
 """
 

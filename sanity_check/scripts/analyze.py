@@ -1,9 +1,8 @@
 """Compare projections across history writers and write OUT_DIR/results.json and
 OUT_DIR/REPORT.md.
 
-Usage: analyze.py OUT_DIR
-Unit = (conversation, scored turn k); its value for a writer is the mean
-projection over samples.
+Usage: analyze.py OUT_DIR Unit = (conversation, scored turn k); its value for a
+       writer is the mean projection over samples.
 Each comparison uses the units both writers kept. CIs resample conversations
 (2000 draws).
 """
@@ -44,7 +43,8 @@ N_BOOT = 2000
 
 def stats(x, y, groups, rng):
     """Spearman and mean offset (x - y), with cluster-bootstrap 95% CIs over
-    conversations."""
+    conversations.
+    """
 
     def point(idx):
         return spearmanr(x[idx], y[idx])[0], float(np.mean(x[idx] - y[idx]))

@@ -1,5 +1,6 @@
 """Shared settings for the drift / harm / capping experiments on real chats
-(Llama 3.3 70B)."""
+(Llama 3.3 70B).
+"""
 
 import importlib.util
 import os
@@ -109,9 +110,9 @@ def capping_config():
 
 
 def load_probing_model():
-    """Llama 3.3 70B in HF.
+    """Llama 3.3 70B in HF. cuDNN's attention kernel crashed on large padded
+    batches (2026-11-02:
 
-    cuDNN's attention kernel crashed on large padded batches (2026-11-02:
     mha_graph.execute ... is_good()), so it is turned off for every HF script.
     """
     import torch
@@ -129,7 +130,8 @@ EMBED_MODEL = (  # The paper's Section 4.2 embedding model.
 
 def harmbench_standard(path):
     """HarmBench standard text behaviors (no contextual or copyright ones), as
-    dicts."""
+    dicts.
+    """
     import csv
 
     with open(path) as f:

@@ -61,7 +61,8 @@ def write_jsonl(path, rows):
 
 def history(users, replies, k, system=None):
     """Messages through user turn k (1-based), with the writer's replies to
-    turns 1..k-1."""
+    turns 1..k-1.
+    """
     msgs = [{"role": "system", "content": system}] if system else []
     for j in range(k - 1):
         msgs += [
@@ -73,7 +74,8 @@ def history(users, replies, k, system=None):
 
 def context(c, k, writer):
     """Messages the scored reply to user turn k is generated after, for one
-    history writer."""
+    history writer.
+    """
     if writer == "none":
         return [{"role": "user", "content": c["users"][k - 1]}]
     return history(c["users"], c["replies"][writer], k)
@@ -81,7 +83,8 @@ def context(c, k, writer):
 
 def usable(unusable, k):
     """A unit (conversation, k) is kept for a writer if all its replies before
-    turn k are usable."""
+    turn k are usable.
+    """
     return not any(unusable[: k - 1])
 
 

@@ -1,12 +1,11 @@
 """Label replies harmful or not with HarmBench's released classifier (vLLM,
 greedy).
 
-Usage: judge_harm.py RUN_DIR
-Judges RUN_DIR/harm.jsonl, RUN_DIR/harm_base.jsonl and RUN_DIR/cap/*.jsonl (last
-reply only) and
-writes a .judged.jsonl next to each, with harmful = 1 / 0 / -1 (unparseable).
-Prompts and the
-512-token cut of the reply follow HarmBench's eval_utils.py (LLAMA2_CLS_PROMPT).
+Usage: judge_harm.py RUN_DIR Judges RUN_DIR/harm.jsonl, RUN_DIR/harm_base.jsonl
+       and RUN_DIR/cap/*.jsonl (last reply only) and writes a .judged.jsonl next
+       to each, with harmful = 1 / 0 / -1 (unparseable). Prompts and the
+       512-token cut of the reply follow HarmBench's eval_utils.py
+       (LLAMA2_CLS_PROMPT).
 """
 
 import argparse

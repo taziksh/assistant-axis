@@ -1,8 +1,9 @@
-"""Summaries for drift (paper 4.1/4.2), harm (4.3) and capping (5).
+"""Summaries for drift (paper 4.1/4.2), harm (4.3) and capping (5). Runs
+whatever inputs exist.
 
-Runs whatever inputs exist. Usage: analyze.py RUN_DIR Writes RUN_DIR/REPORT.md,
-RUN_DIR/results.json and RUN_DIR/drift.png. CIs are 95%, bootstrap over
-conversations (drift, harm) or items (capping), 2000 resamples.
+Usage: analyze.py RUN_DIR Writes RUN_DIR/REPORT.md, RUN_DIR/results.json and
+       RUN_DIR/drift.png. CIs are 95%, bootstrap over conversations (drift,
+       harm) or items (capping), 2000 resamples.
 """
 
 import argparse
@@ -21,10 +22,8 @@ rng = np.random.default_rng(0)
 
 
 def boot(groups, stat):
-    """Groups: list of per-cluster arrays/rows; stat: f(list of clusters) ->
-    float.
-
-    Returns (est, lo, hi).
+    """groups: list of per-cluster arrays/rows; stat: f(list of clusters) ->
+    float. Returns (est, lo, hi).
     """
     est = stat(groups)
     bs = [
@@ -41,7 +40,8 @@ def fmt(t, d=2):
 
 def drift(run, convs, res, out, use_domains):
     """use_domains=False pools all conversations: the domain labels come from an
-    unapproved judge."""
+    unapproved judge.
+    """
     proj = {
         (r["hash"], r["k"]): r
         for r in read_jsonl(os.path.join(run, "projections.jsonl"))
@@ -178,7 +178,8 @@ def plot(run, curves):
 
 def ridge(run, convs, by_conv, res, out):
     """Paper 4.2: does user message k predict where reply k lands, and the
-    change from reply k-1?"""
+    change from reply k-1?
+    """
     from sentence_transformers import SentenceTransformer
     from sklearn.linear_model import RidgeCV
     from sklearn.model_selection import cross_val_predict
@@ -323,10 +324,10 @@ LOOSE = HARMFUL | {"almost_enough_info"}
 
 def harm_mhj(run, res, out, proj_file="mhj_none_proj.jsonl", judge="v3.2"):
     """Paper 4.3 on real multi-turn jailbreaks: does the projection of Llama's
-    reply just before the attacker's final message predict a harmful final
-    reply?
+    reply just before the
 
-    Uncapped MHJ run, paper's judge.
+    attacker's final message predict a harmful final reply? Uncapped MHJ run,
+    paper's judge.
     """
     pj, hj = os.path.join(run, "cap", proj_file), os.path.join(
         run, "cap", f"mhj_none.judged_{judge}.jsonl"

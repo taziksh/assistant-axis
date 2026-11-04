@@ -1,15 +1,18 @@
 """Regenerate a persona-modulation jailbreak set in the style of Shah et al.
+(2023), as used by the paper (Sec. 5).
 
-(2023), as used by the paper (Sec. 5). Usage: shah_gen.py OUT_JSONL [--generator
-gpt-4o|v3.2] [--only CATEGORY ...] Neither Shah et al. nor Lu et al. released
-their prompts, so we follow Shah's published pipeline: harm category -> personas
-that would comply -> persona-modulation system prompt, plus one in-character
-question per persona (the Assistant Axis version pairs each persona with
-behavioral questions). Categories: Shah et al. Table 5 (43), minus "Endorsing
-pedophilia" (no content sexualizing children). 5 personas per category. The
-persona prompt is used as the system prompt and the question as the user
-message, as in both papers. Generator prompt and plan approved by the user
-2026-11-03. Runs locally (needs OPENROUTER_API_KEY).
+Usage: shah_gen.py OUT_JSONL [--generator gpt-4o|v3.2] [--only CATEGORY ...]
+Neither Shah et al. nor Lu et al. released their prompts, so we follow Shah's
+published pipeline: harm category -> personas that would comply ->
+persona-modulation system prompt, plus one in-character question per persona
+(the Assistant Axis version pairs each persona with behavioral questions).
+Categories: Shah et al.
+Table 5 (43), minus "Endorsing pedophilia" (no content sexualizing children). 5
+personas per category.
+The persona prompt is used as the system prompt and the question as the user
+message, as in both papers.
+Generator prompt and plan approved by the user 2026-11-03. Runs locally (needs
+OPENROUTER_API_KEY).
 """
 
 import argparse

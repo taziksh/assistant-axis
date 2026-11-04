@@ -3,13 +3,11 @@
 Usage: ingest_docent.py RUN_DIR [--upload]   (without --upload: convert and
        check only)
 One AgentRun per scored reply: the conversation through user turn k with that
-history's earlier
-assistant replies, then Llama's reply k. Needs DOCENT_API_KEY in the
-environment.
+history's earlier assistant replies, then Llama's reply k. Needs DOCENT_API_KEY
+in the environment.
 Accepted check warnings (2026-10-31 run): empty_message = WildChat users who
-sent blank messages
-(kept, the model saw them); reasoning_embedded_as_text = words like "thinking:"
-in user/GPT text.
+sent blank messages (kept, the model saw them); reasoning_embedded_as_text =
+words like "thinking:" in user/GPT text.
 """
 
 import argparse

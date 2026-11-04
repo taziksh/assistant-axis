@@ -1,25 +1,20 @@
 """Capability cost of the cap, the paper's benchmarks and sizes (Section 5.1.3),
 with lm-eval (transformers).
 
-Usage: capability.py RUN_DIR
-Staged (user's call, 2026-11-03), uncapped vs capped:
-  stage 1: IFEval 200, MMLU Pro 210 (15 per subject), GSM8K 200, EQ-Bench all
-  171.
-  stage 2 (only if RUN_DIR/capability_stage2_approved exists): the paper's
-  sizes, IFEval all 541,
-  MMLU Pro 1400 (100 per subject), GSM8K 1000, EQ-Bench 171. Answers are cached
-  per condition
-  (lm-eval use_cache), so stage 2 reuses every stage-1 answer.
-lm-eval's limit takes the first N items per task, where the paper subsampled
-(method not stated).
+Usage: capability.py RUN_DIR Staged (user's call, 2026-11-03), uncapped vs
+       capped: stage 1: IFEval 200, MMLU Pro 210 (15 per subject), GSM8K 200,
+       EQ-Bench all 171. stage 2 (only if RUN_DIR/capability_stage2_approved
+       exists): the paper's sizes, IFEval all 541, MMLU Pro 1400 (100 per
+       subject), GSM8K 1000, EQ-Bench 171. Answers are cached per condition
+       (lm-eval use_cache), so stage 2 reuses every stage-1 answer. lm-eval's
+       limit takes the first N items per task, where the paper subsampled
+       (method not stated).
 Metrics: the paper doesn't name them. GSM8K uses lm-eval's flexible-extract
-         (last number in the reply):
-strict-match only accepts the dataset's "#### N" format, which chat replies
-don't use (it scored 0.005 on
-replies that were correct, 2026-11-03). Writes RUN_DIR/capability.json.
+(last number in the reply): strict-match only accepts the dataset's "#### N"
+format, which chat replies don't use (it scored 0.005 on replies that were
+correct, 2026-11-03). Writes RUN_DIR/capability.json.
 Paper, Llama 3.3 70B uncapped / capped: IFEval 0.93 / 0.93, MMLU Pro 0.71 /
-0.70, GSM8K 0.89 / 0.89,
-EQ-Bench 83.1 / 84.1 (Figure 10). Approved 2026-11-02.
+0.70, GSM8K 0.89 / 0.89, EQ-Bench 83.1 / 84.1 (Figure 10). Approved 2026-11-02.
 """
 
 import argparse

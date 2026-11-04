@@ -1,7 +1,8 @@
 """Collect long English WildChat-1M conversations with GPT's original replies.
 
-Usage: build.py OUT_JSONL [--n N] [--min-turns T] [--max-files M] Writes one row
-per conversation: users, replies["gpt"], unusable["gpt"]. Rows are shuffled.
+Usage: build.py OUT_JSONL [--n N] [--min-turns T] [--max-files M]
+Writes one row per conversation: users, replies["gpt"], unusable["gpt"]. Rows
+are shuffled.
 """
 
 import argparse

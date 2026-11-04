@@ -2,37 +2,29 @@
 openings instead of role prompts.
 
 Usage: harm_wild.py RUN_DIR CATQA_JSONL {pool,harm} [--first-max-tokens N]
-       [--per-band N] [--per-category Q]
-       [--lowest N] [--only-k K] [--hash-regex RE] [--questions-jsonl FILE]
-       [--tag T]
+       [--per-band N] [--per-category Q] [--lowest N] [--only-k K] [--hash-regex
+       RE] [--questions-jsonl FILE] [--tag T]
 Design (approved 2026-11-03), following the paper:
 - pool: for each conversation in RUN_DIR/selected.jsonl (real WildChat chats
-  from build.py --random, or the
-  paper's role openings from roles_build.py), pick a random user turn k (1..12,
-  prompt must fit) and let
-  Llama write reply k after the history. Writes RUN_DIR/drift.jsonl, which
-  activations.py projects (the
-  opening's score = the paper's first-turn projection).
+  from build.py --random, or the paper's role openings from roles_build.py),
+  pick a random user turn k (1..12, prompt must fit) and let Llama write reply k
+  after the history. Writes RUN_DIR/drift.jsonl, which activations.py projects
+  (the opening's score = the paper's first-turn projection).
 - harm: openings are chosen by 10 equal-width bands of the opening score (N per
-  band; a large N takes all),
-  or the N most drifted (--lowest), optionally only turn K (--only-k) or hashes
-  matching --hash-regex
-  (needs RUN_DIR/projections.jsonl).
-  Every opening is followed by the same harmful questions (the paper used the
-  same 440 for every
-  opening). The paper's set (Shah et al. 2023) was withheld by its authors, so
-  we use the closest
+  band; a large N takes all), or the N most drifted (--lowest), optionally only
+  turn K (--only-k) or hashes matching --hash-regex (needs
+  RUN_DIR/projections.jsonl). Every opening is followed by the same harmful
+  questions (the paper used the same 440 for every opening). The paper's set
+  (Shah et al. 2023) was withheld by its authors, so we use the closest
   published set in style, CategoricalHarmfulQA (Bhardwaj et al. 2024, English,
-  Apache-2.0): open-ended
-  requests for strategies. Q per category, fixed seed. The "Child Abuse"
-  category is excluded so that
-  no replies about harming children are generated or stored. --questions-jsonl
-  uses another set instead
-  (e.g. the Shah-style questions). One reply per opening x question.
-  Writes RUN_DIR/harm_openings{T}.jsonl and RUN_DIR/harm_wild{T}.jsonl.
+  Apache-2.0): open-ended requests for strategies. Q per category, fixed seed.
+  The "Child Abuse" category is excluded so that no replies about harming
+  children are generated or stored. --questions-jsonl uses another set instead
+  (e.g. the Shah-style questions). One reply per opening x question. Writes
+  RUN_DIR/harm_openings{T}.jsonl and RUN_DIR/harm_wild{T}.jsonl.
 Generation: vLLM, temperature 0.7, top_p 0.9 (the repo's settings), no system
-            prompt (except role openings from
-roles_build.py, which carry the role prompt as in the paper).
+prompt (except role openings from roles_build.py, which carry the role prompt as
+in the paper).
 """
 
 import argparse
@@ -67,7 +59,8 @@ EXCLUDED = {"Child Abuse"}
 
 def pick_questions(path, per_category):
     """per_category CategoricalHarmfulQA questions from each category except
-    EXCLUDED (seeded)."""
+    EXCLUDED (seeded).
+    """
     import json
 
     rows = [json.loads(l) for l in open(path) if l.strip()]

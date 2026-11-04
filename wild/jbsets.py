@@ -2,13 +2,11 @@
 judge_paper.py).
 
 - itw: in-the-wild jailbreak prompts (TrustAIRLab, 2023-12-25) paired with
-  forbidden questions
-  (TrustAIRLab): N distinct questions from each of the 13 categories, each with
-  a random prompt.
+  forbidden questions (TrustAIRLab): N distinct questions from each of the 13
+  categories, each with a random prompt.
 - mhj: Scale AI's multi-turn human jailbreaks (537); behavior = HarmBench row
-  question_id - 2.
-(ToxicChat's jailbreak-flagged prompts were dropped 2026-11-02: no target
-behavior for the judge.)
+  question_id - 2. (ToxicChat's jailbreak-flagged prompts were dropped
+  2026-11-02: no target behavior for the judge.)
 """
 
 import csv

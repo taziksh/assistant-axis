@@ -2,8 +2,9 @@
 (vLLM, greedy).
 
 Usage: label_turns.py OUT_DIR Reads OUT_DIR/histories.jsonl; writes
-OUT_DIR/turn_labels.jsonl with {hash, k, label}. The judge sees the real
-conversation (user messages and GPT's replies) before turn k.
+       OUT_DIR/turn_labels.jsonl with {hash, k, label}.
+The judge sees the real conversation (user messages and GPT's replies) before
+turn k.
 """
 
 import argparse

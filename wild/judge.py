@@ -2,9 +2,9 @@
 conversations.
 
 Usage: judge.py CONVS_JSONL RUN_DIR --per-domain N Writes RUN_DIR/labels.jsonl
-(all candidates) and RUN_DIR/selected.jsonl (up to N per domain, in the shuffled
-order of CONVS_JSONL). Turns whose prompt doesn't fit are dropped later, in
-generate.
+       (all candidates) and RUN_DIR/selected.jsonl (up to N per domain, in the
+       shuffled order of CONVS_JSONL). Turns whose prompt doesn't fit are
+       dropped later, in generate.
 """
 
 import argparse

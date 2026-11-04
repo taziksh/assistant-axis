@@ -2,14 +2,17 @@
 activation cap (HF, greedy).
 
 Usage: capping.py RUN_DIR DL_DIR [--itw N] [--only SET:COND] [--shah
-PAIRS_JSONL] Sets: itw and mhj from jbsets.py (DL_DIR holds the downloaded
-files, see run.sh); or, with --shah, only the Shah-style persona set from
-shah_gen.py (persona as system prompt, question as the user turn). Llama answers
-each user turn in order after its own earlier replies; the last reply is judged
-(judge_paper.py). Conditions: none, and capped with the recommended released
-setting (CAPPING_EXPERIMENT). Writes RUN_DIR/cap/{set}_{condition}.jsonl;
-finished files are skipped. MHJ runs first; its uncapped replies are also
-projected onto the axis (RUN_DIR/cap/mhj_none_proj.jsonl) for the harm test.
+       PAIRS_JSONL]
+Sets: itw and mhj from jbsets.py (DL_DIR holds the downloaded files, see
+run.sh); or, with --shah, only the Shah-style persona set from shah_gen.py
+(persona as system prompt, question as the user turn). Llama answers each user
+turn in order after its own earlier replies; the last reply is judged
+(judge_paper.py).
+Conditions: none, and capped with the recommended released setting
+(CAPPING_EXPERIMENT).
+Writes RUN_DIR/cap/{set}_{condition}.jsonl; finished files are skipped. MHJ runs
+first; its uncapped replies are also projected onto the axis
+(RUN_DIR/cap/mhj_none_proj.jsonl) for the harm test.
 """
 
 import argparse
@@ -51,7 +54,8 @@ MAX_PROMPT = 6000
 
 def batched_generate(pm, prompts):
     """Greedy replies for a list of token-id lists; batches sorted by length
-    under TOKEN_BUDGET."""
+    under TOKEN_BUDGET.
+    """
     tok = pm.tokenizer
     order = sorted(range(len(prompts)), key=lambda i: len(prompts[i]))
     out, i = [None] * len(prompts), 0
@@ -79,8 +83,9 @@ def batched_generate(pm, prompts):
 
 def run_set(pm, items, ckpt=None):
     """Answers every user turn in order; returns the per-item list of replies.
+    With ckpt, saves the
 
-    With ckpt, saves the replies after each turn and resumes from them.
+    replies after each turn and resumes from them.
     """
     tok = pm.tokenizer
     replies = {it["id"]: [] for it in items}
@@ -231,10 +236,11 @@ def main():
 
 def project_replies(pm, it, replies):
     """Layer-40 projection of each of Llama's replies, averaged over its tokens,
-    in one forward pass of the whole conversation.
+    in one forward pass of
 
-    (Generation cut prompts over MAX_PROMPT tokens to their end; this pass sees
-    the full conversation, so the few very long attacks differ slightly.)
+    the whole conversation. (Generation cut prompts over MAX_PROMPT tokens to their
+    end; this pass sees the full conversation, so the few very long attacks differ
+    slightly.)
     """
     global _enc, _ax
     if "_enc" not in globals():

@@ -1,23 +1,25 @@
-"""Harm judge from the Assistant Axis paper (Lu et al.
+"""Harm judge from the Assistant Axis paper (Lu et al. 2026, Appendix D.2.2),
+with DeepSeek-V3 via OpenRouter.
 
-2026, Appendix D.2.2), with DeepSeek-V3 via OpenRouter. Usage: judge_paper.py
-CAP_JSONL [CAP_JSONL ...] [--judge v3.2|v3|v3-0324] [--concurrency N] Runs
-locally (needs OPENROUTER_API_KEY). For each row of a reply file (capping.py,
-harm_wild.py, alone.py), judges Llama's last reply and writes
+Usage: judge_paper.py CAP_JSONL [CAP_JSONL ...] [--judge v3.2|v3|v3-0324]
+       [--concurrency N]
+Runs locally (needs OPENROUTER_API_KEY). For each row of a reply file
+(capping.py, harm_wild.py, alone.py), judges Llama's last reply and writes
 FILE.judged_{JUDGE}.jsonl with the judge's 9-way "score" and "analysis". Which
 scores count as harmful is not stated in the paper; it is decided in the
-analysis, not here. Prompt text is transcribed from the paper PDF; only PDF-
-extraction artifacts were fixed (run-together words, page numbers). Our data has
-one goal sentence per attack, so it fills both "behavior" and "target action"
-(the paper's dataset had two fields). The response is cut to its first 512
-tokens (Llama 3.3 tokenizer), as the prompt states. [request] is everything the
-attacker wrote, in order. The paper's attacks were single-turn (persona setup +
-question) and its prompt refers to instructions and pseudonyms "mentioned in the
-[request]", so its request held the whole jailbreak input; for multi-turn MHJ
-that is all user messages (an inference, the paper does not say). Approved
-2026-11-02. Rows already judged are skipped and failed ones (score None) re-
-judged, so a rerun resumes; results are written as they complete, in completion
-order (read them by id).
+analysis, not here.
+Prompt text is transcribed from the paper PDF; only PDF-extraction artifacts
+were fixed (run-together words, page numbers). Our data has one goal sentence
+per attack, so it fills both "behavior" and "target action" (the paper's dataset
+had two fields). The response is cut to its first 512 tokens (Llama 3.3
+tokenizer), as the prompt states. [request] is everything the attacker wrote, in
+order. The paper's attacks were single-turn (persona setup + question) and its
+prompt refers to instructions and pseudonyms "mentioned in the [request]", so
+its request held the whole jailbreak input; for multi-turn MHJ that is all user
+messages (an inference, the paper does not say). Approved 2026-11-02.
+Rows already judged are skipped and failed ones (score None) re-judged, so a
+rerun resumes; results are written as they complete, in completion order (read
+them by id).
 """
 
 import argparse

@@ -2,11 +2,12 @@
 bf16).
 
 Usage: activations.py OUT_DIR [--model M --layer L --axis PATH]  (overrides are
-for local tests) Reads OUT_DIR/histories.jsonl and OUT_DIR/scored.jsonl. For
-each scored sample, runs the history plus the reply through the model, means the
-layer-L output over the reply tokens (spans from
-ConversationEncoder.build_turn_spans), and projects onto the unit axis. Also the
-teacher-forced readout: GPT's original reply to turn k, as writer "gpt_tf".
+       for local tests)
+Reads OUT_DIR/histories.jsonl and OUT_DIR/scored.jsonl. For each scored sample,
+runs the history plus the reply through the model, means the layer-L output over
+the reply tokens (spans from ConversationEncoder.build_turn_spans), and projects
+onto the unit axis. Also the teacher-forced
+readout: GPT's original reply to turn k, as writer "gpt_tf".
 Appends to OUT_DIR/projections.jsonl, so a rerun resumes.
 """
 
@@ -58,7 +59,8 @@ def main():
 
     def project(msgs):
         """Projection of the mean layer output over the last message (an
-        assistant reply)."""
+        assistant reply).
+        """
         full_ids, spans = enc.build_turn_spans(msgs)
         last = len([m for m in msgs if m["role"] != "system"]) - 1
         span = next(

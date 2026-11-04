@@ -2,8 +2,8 @@
 conversations to score.
 
 Usage: judge.py CONVS_JSONL LABELS_JSONL SELECTED_JSONL --per-domain N Labels
-are cached in LABELS_JSONL and extended in chunks until every domain has enough
-candidates.
+       are cached in LABELS_JSONL and extended in chunks until every domain has
+       enough candidates.
 """
 
 import argparse

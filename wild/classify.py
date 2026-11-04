@@ -8,17 +8,14 @@ Writes ITEMS_JSONL with suffix .cls_{CLASSIFIER}.jsonl: {"id", "harmful"
 Classifiers (each with its authors' published prompt; chosen from published
 evals, 2026-11-03):
 - deepseek_t15: DeepSeek V3.2 (OpenRouter, SiliconFlow fp8, as our response
-  judge) with the WildGuard
-  paper's GPT-4 prompt (Han et al. 2024, Table 15), verbatim. The paper does not
-  say how prompt-only items
-  fill {response} or how Q1 maps to a label: we leave the response empty and
-  read Q1 "no" as harmful.
+  judge) with the WildGuard paper's GPT-4 prompt (Han et al. 2024, Table 15),
+  verbatim. The paper does not say how prompt-only items fill {response} or how
+  Q1 maps to a label: we leave the response empty and read Q1 "no" as harmful.
 - wildguard: allenai/wildguard (7B), model-card prompt, empty response; "Harmful
   request: yes" = harmful.
 - qwen3guard: Qwen/Qwen3Guard-Gen-8B, model-card prompt-moderation format.
-  Unsafe = harmful;
-  "Controversial" is stored and scored both ways (strict = harmful, loose =
-  not), as in its report.
+  Unsafe = harmful; "Controversial" is stored and scored both ways (strict =
+  harmful, loose = not), as in its report.
 Local models run with transformers on CUDA or Apple MPS, batched.
 """
 
