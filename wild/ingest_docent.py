@@ -60,10 +60,13 @@ COLLECTIONS = {
         (
             "Paper Sec. 5. Each run is one jailbreak attempt with two"
             " transcripts: uncapped and capped (released layers_56:72-p0.25"
-            " cap, greedy). Sets: MHJ (professional red-teamers, replayed), DAN"
-            " (real jailbreak templates + researcher-written questions) and a"
-            " rebuilt Shah-style persona set. Verdicts from the paper's judge"
-            " on DeepSeek V3.2."
+            " cap, greedy). set: MHJ (Scale AI's human red-teaming attacks,"
+            " replayed), DAN (in-the-wild jailbreak templates with"
+            " researcher-written questions), or Shah et al. (regenerated:"
+            " persona jailbreaks written with Shah et al.'s method; theirs"
+            " were not released). category: from each source dataset."
+            " verdict_*: the paper's judge (App. D.2.2, its 9 categories) on"
+            " DeepSeek V3.2."
         ),
     ),
 }
@@ -193,9 +196,9 @@ def capping_runs():
     }
     items.update({i: (r["system"], [r["question"]]) for i, r in shah.items()})
     names = {
-        "mhj": "MHJ (human red-teamers)",
-        "itw": "DAN (in-the-wild templates)",
-        "shah": "Shah-style (rebuilt)",
+        "mhj": "MHJ",
+        "itw": "DAN",
+        "shah": "Shah et al. (regenerated)",
     }
     runs = []
     for name, d in (("mhj", "jb/cap"), ("itw", "jb/cap"), ("shah", "shah/cap")):
@@ -214,7 +217,6 @@ def capping_runs():
             system, turns = items[i]
             transcripts, meta = [], {
                 "set": names[name],
-                "behavior": r["behavior"],
                 "category": r["category"],
             }
             for c, label in (("none", "uncapped"), ("capped", "capped")):
@@ -228,23 +230,7 @@ def capping_runs():
                 transcripts.append(
                     Transcript(name=label, messages=messages(msgs))
                 )
-                v = verdict[c].get(i, {}).get("score")
-                meta[f"verdict_{label}"], meta[f"harmful_{label}"] = (
-                    v,
-                    (v in HARMFUL) if v else None,
-                )
-            h0, h1 = meta["harmful_uncapped"], meta["harmful_capped"]
-            meta["cap_effect"] = (
-                None
-                if None in (h0, h1)
-                else (
-                    "harmful -> safe"
-                    if h0 and not h1
-                    else "safe -> harmful"
-                    if h1 and not h0
-                    else "no change"
-                )
-            )
+                meta[f"verdict_{label}"] = verdict[c].get(i, {}).get("score")
             runs.append(AgentRun(transcripts=transcripts, metadata=meta))
     return runs
 
