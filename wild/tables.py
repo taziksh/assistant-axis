@@ -3,9 +3,13 @@
 Usage: tables.py [RESULTS_DIR]   (default: wild/results)
 Prints markdown for:
 - Table 1: drift by turn on real WildChat chats (results/harmfloor).
+- Table 1b: drift by turn in the same chats (results/drift_turns).
+- Table 1c: our projection of the paper's released Llama conversations vs its
+  Fig. 25 (results/drift_scale).
 - Table 2: harm rate vs drift: role openings (results/roles_q2) and real
   openings (results/harmfloor: spread, most drifted, turn 1).
-- Table 3: activation capping on jailbreaks (results/jb/cap, results/shah/cap).
+- Table 3: activation capping on jailbreaks (results/jb/cap for MHJ,
+  results/dan3/cap for DAN, results/shah/cap).
 - Table 4: capability cost of the cap (results/cap).
 - Appendix A1-A2: Table 3 by each source dataset's own categories (MHJ: HarmBench
   semantic categories; DAN: TrustAIRLab's 13). A3: Table 2's harmful rate by
@@ -71,6 +75,73 @@ def table1(res):
     print("\nCI: normal approximation (mean ± 1.96 SE).\n")
 
 
+def table1b(res):
+    path = os.path.join(res, "drift_turns", "projections.jsonl")
+    if not os.path.exists(path):
+        return
+    by_chat = collections.defaultdict(dict)
+    for r in read(path):
+        if r["proj"] is not None:
+            by_chat[r["hash"]][r["k"]] = r["proj"]
+    turns = range(1, 13)
+    chats = [c for c in by_chat.values() if all(k in c for k in turns)]
+    print(
+        "Table 1b. Assistant Axis projection by turn, the same real WildChat"
+        f" chats at every turn ({len(chats)} chats with all 12 turns).\n"
+    )
+    print("| Turn | Mean (95% CI) | Change from turn 1 (95% CI) |")
+    print("|---|---|---|")
+    for k in turns:
+        v = [c[k] for c in chats]
+        d = [c[k] - c[1] for c in chats]
+        lo, hi = ci(v, np.mean)
+        dlo, dhi = ci(d, np.mean)
+        change = (
+            "—" if k == 1 else f"{np.mean(d):+.2f} ({dlo:+.2f}, {dhi:+.2f})"
+        )
+        print(f"| {k} | {np.mean(v):.2f} ({lo:.2f}, {hi:.2f}) | {change} |")
+    print("\nCI: bootstrap over chats.\n")
+
+
+# Read off the paper's Fig. 25 (Llama 3.3 70B) by eye, to about ±0.05: turn 1
+# and the mean of the last 3 turns, for the simulated user that wrote each
+# released transcript.
+PAPER_FIG25 = {
+    "coding": ("Sonnet 4.5", 1.04, 0.46),
+    "therapy": ("GPT-5", 1.21, 0.18),
+}
+
+
+def table1c(res):
+    path = os.path.join(res, "drift_scale", "projections.jsonl")
+    if not os.path.exists(path):
+        return
+    by_conv = collections.defaultdict(dict)
+    for r in read(path):
+        by_conv[r["hash"]][r["k"]] = r["proj"]
+    print(
+        "Table 1c. Scale check: our projection of the paper's released Llama"
+        " conversations vs the paper's Fig. 25.\n"
+    )
+    print(
+        "| Domain (simulated user) | Ours: turn 1 | Paper: turn 1 | Ours: last"
+        " 3 turns | Paper: last 3 turns |"
+    )
+    print("|---|---|---|---|---|")
+    for domain, (user, first, last) in PAPER_FIG25.items():
+        v = by_conv[f"paper-{domain}"]
+        ks = sorted(v)
+        ours_last = np.mean([v[k] for k in ks[-3:]])
+        print(
+            f"| {domain} ({user}) | {v[ks[0]]:.2f} | {first:.2f} |"
+            f" {ours_last:.2f} | {last:.2f} |"
+        )
+    print(
+        "\nOurs: one released conversation per domain. Paper: average of 100"
+        " conversations, read off the figure by eye.\n"
+    )
+
+
 def openings(gen_path, judged_path):
     """Per opening: (projection, harmful rate over its questions)."""
     score = verdicts(judged_path)
@@ -122,13 +193,13 @@ def table2(res):
 def table3(res):
     sets = [
         (
-            "Shah-style, rebuilt",
+            "Shah et al. (regenerated)",
             os.path.join(res, "shah", "cap", "shah"),
             "category",
         ),
         (
-            "DAN (real templates)",
-            os.path.join(res, "jb", "cap", "itw"),
+            "DAN (3 templates per question)",
+            os.path.join(res, "dan3", "cap", "itw"),
             "behavior",
         ),
         (
@@ -194,7 +265,7 @@ def table4(res):
 def appendix_capping(res):
     sets = [
         ("A1. MHJ", os.path.join(res, "jb", "cap", "mhj"), "behavior"),
-        ("A2. DAN", os.path.join(res, "jb", "cap", "itw"), "behavior"),
+        ("A2. DAN", os.path.join(res, "dan3", "cap", "itw"), "behavior"),
     ]
     for title, stem, unit in sets:
         a = verdicts(stem + "_none.judged_v3.2.jsonl")
@@ -261,6 +332,8 @@ def main():
     res = sys.argv[1] if len(sys.argv) > 1 else os.path.join(here, "results")
     for table in (
         table1,
+        table1b,
+        table1c,
         table2,
         table3,
         table4,

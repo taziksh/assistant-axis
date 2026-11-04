@@ -1,12 +1,13 @@
 """Score the repo's released Llama drift conversations with our pipeline.
 
 Usage: drift_scale.py RUN_DIR
-transcripts/persona_drift/{coding,writing,therapy,philosophy}.json are one
-example Llama 3.3 70B conversation per domain from the paper's Sec. 4.1. Writes
+transcripts/persona_drift/ holds one example conversation per domain from the
+paper's Sec. 4.1; only coding and therapy are Llama 3.3 70B (writing and
+philosophy are Gemma 2 27B), so only those two are used. Writes
 RUN_DIR/selected.jsonl and RUN_DIR/drift.jsonl with the paper's own assistant
 replies at every turn (no generation), so activations.py projects them exactly
 as it projects ours. Their per-turn values can then be set against the paper's
-figure to check that our scale matches.
+Fig. 25 to check that our scale matches.
 """
 
 import json
@@ -21,9 +22,11 @@ def main():
     run = sys.argv[1]
     os.makedirs(run, exist_ok=True)
     sel, drift = [], []
-    for domain in ("coding", "writing", "therapy", "philosophy"):
+    for domain in ("coding", "therapy"):
         with open(os.path.join(SRC, f"{domain}.json")) as f:
-            conv = json.load(f)["conversation"]
+            data = json.load(f)
+        assert data["model"] == "meta-llama/Llama-3.3-70B-Instruct", domain
+        conv = data["conversation"]
         users = [m["content"] for m in conv if m["role"] == "user"]
         replies = [m["content"] for m in conv if m["role"] == "assistant"]
         sel.append({
