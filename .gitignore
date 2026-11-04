@@ -45,3 +45,9 @@ outputs/
 # OS
 .DS_Store
 Thumbs.db
+
+# Real-data experiments: outputs, downloaded datasets and generated prompts stay local
+# (they include model replies to harmful requests and third-party data).
+wild/results/
+wild/data/
+sanity_check/results/
