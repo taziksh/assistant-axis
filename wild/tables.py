@@ -103,13 +103,14 @@ def table1b(res):
     print("\nCI: bootstrap over chats.\n")
 
 
-# Read off the paper's Fig. 25 (Llama 3.3 70B) by eye, to about ±0.05: turn 1
-# and the mean of the last 3 turns, for the simulated user that wrote each
-# released transcript.
-PAPER_FIG25 = {
-    "coding": ("Sonnet 4.5", 1.04, 0.46),
-    "therapy": ("GPT-5", 1.21, 0.18),
-}
+# The simulated user that wrote each released Llama transcript.
+RELEASED_USER = {"coding": "Sonnet 4.5", "therapy": "GPT-5"}
+
+
+def paper_fig25():
+    """(domain, user) -> per-turn values digitized from the paper's Fig. 25."""
+    with open(os.path.join(os.path.dirname(__file__), "paper_fig25.json")) as f:
+        return {tuple(k.split("|")): v for k, v in json.load(f).items()}
 
 
 def table1c(res):
@@ -124,21 +125,24 @@ def table1c(res):
         " conversations vs the paper's Fig. 25.\n"
     )
     print(
-        "| Domain (simulated user) | Ours: turn 1 | Paper: turn 1 | Ours: last"
-        " 3 turns | Paper: last 3 turns |"
+        "| Domain (simulated user) | Ours (turn 1) | Paper (turn 1) | Ours (last"
+        " 3 turns) | Paper (last 3 turns) |"
     )
     print("|---|---|---|---|---|")
-    for domain, (user, first, last) in PAPER_FIG25.items():
+    paper = paper_fig25()
+    for domain, user in RELEASED_USER.items():
         v = by_conv[f"paper-{domain}"]
         ks = sorted(v)
         ours_last = np.mean([v[k] for k in ks[-3:]])
+        curve = [x for x in paper[(domain, user)] if x is not None]
+        first, last = curve[0], np.mean(curve[-3:])
         print(
             f"| {domain} ({user}) | {v[ks[0]]:.2f} | {first:.2f} |"
             f" {ours_last:.2f} | {last:.2f} |"
         )
     print(
         "\nOurs: one released conversation per domain. Paper: average of 100"
-        " conversations, read off the figure by eye.\n"
+        " conversations, digitized from the figure (paper_fig25.json).\n"
     )
 
 
@@ -229,22 +233,21 @@ def table3(res):
     )
 
 
-def table4(res):
+def capability_scores(res):
+    """Benchmark -> (metric, uncapped, capped), or {} without results."""
     path = os.path.join(res, "cap", "capability.json")
     if not os.path.exists(path):
-        return
+        return {}
     with open(path) as f:
         stage = json.load(f)["stage1"]
-    print("Table 4. Capability cost of the cap (stage 1 sizes).\n")
-    print("| Benchmark | Metric | Uncapped | Capped |")
-    print("|---|---|---|---|")
+    out = {}
     for t, v in stage["none"].items():
         metric = stage.get("none_metric", {}).get(t, "?")
+        scores = [v, stage["capped"][t]]
         if t == "gsm8k" and "strict" in metric:
             # The saved score is strict-match; the per-question file holds both
             # filters (2 rows per question), so flexible = all - strict.
-            fixed = []
-            for cond in ("none", "capped"):
+            for c, cond in enumerate(("none", "capped")):
                 rows = read(
                     os.path.join(
                         res, "cap", f"samples_stage1_{cond}_gsm8k.jsonl"
@@ -252,13 +255,21 @@ def table4(res):
                 )
                 n = len({r["doc_id"] for r in rows})
                 total = sum(r["exact_match"] for r in rows)
-                fixed.append((total - stage[cond]["gsm8k"] * n) / n)
-            print(
-                f"| gsm8k | exact_match,flexible-extract | {fixed[0]:.3f} |"
-                f" {fixed[1]:.3f} |"
-            )
-            continue
-        print(f"| {t} | {metric} | {v:.3f} | {stage['capped'][t]:.3f} |")
+                scores[c] = (total - stage[cond]["gsm8k"] * n) / n
+            metric = "exact_match,flexible-extract"
+        out[t] = (metric, *scores)
+    return out
+
+
+def table4(res):
+    scores = capability_scores(res)
+    if not scores:
+        return
+    print("Table 4. Capability cost of the cap (stage 1 sizes).\n")
+    print("| Benchmark | Metric | Uncapped | Capped |")
+    print("|---|---|---|---|")
+    for t, (metric, a, b) in scores.items():
+        print(f"| {t} | {metric} | {a:.3f} | {b:.3f} |")
     print()
 
 
