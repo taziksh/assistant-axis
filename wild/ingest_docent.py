@@ -276,7 +276,7 @@ def main():
                 client.add_agent_runs(cid, runs[s : s + 2000])
             print(
                 f"{key}: uploaded {len(runs)} ->"
-                f" https://docent.transluce.org/collection/{cid}",
+                f" https://docent.transluce.org/dashboard/{cid}",
                 flush=True,
             )
 

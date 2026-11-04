@@ -94,7 +94,7 @@ def main():
         ),
     )
     print(client.add_agent_runs(cid, runs))
-    print(f"https://docent.transluce.org/collection/{cid}")
+    print(f"https://docent.transluce.org/dashboard/{cid}")
 
 
 if __name__ == "__main__":
