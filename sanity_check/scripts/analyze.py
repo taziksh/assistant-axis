@@ -1,30 +1,54 @@
-"""Compare projections across history writers and write OUT_DIR/results.json and OUT_DIR/REPORT.md.
+"""Compare projections across history writers and write OUT_DIR/results.json and
+OUT_DIR/REPORT.md.
 
 Usage: analyze.py OUT_DIR
-Unit = (conversation, scored turn k); its value for a writer is the mean projection over samples.
-Each comparison uses the units both writers kept. CIs resample conversations (2000 draws).
+Unit = (conversation, scored turn k); its value for a writer is the mean
+projection over samples.
+Each comparison uses the units both writers kept. CIs resample conversations
+(2000 draws).
 """
-import argparse, json, os
-from collections import Counter, defaultdict
+
+import argparse
+from collections import Counter
+from collections import defaultdict
+import json
+import os
+
+from common import DOMAINS
+from common import read_jsonl
 import numpy as np
 from scipy.stats import spearmanr
-from common import DOMAINS, read_jsonl
 
 COMPARISONS = [  # (x, y, what it tests)
     ("gpt", "own_a", "main: GPT history vs Llama's own history"),
     ("own_b", "own_a", "noise ceiling: two Llama own-history rollouts"),
-    ("control", "own_a", "positive control: pirate-prompted history (should move)"),
+    (
+        "control",
+        "own_a",
+        "positive control: pirate-prompted history (should move)",
+    ),
     ("none", "own_a", "no history: only user message k"),
-    ("gpt_tf", "own_a", "teacher-forced GPT reply k vs Llama's reply on its own history"),
-    ("gpt_tf", "gpt", "teacher-forced GPT reply k vs Llama's reply on GPT history"),
+    (
+        "gpt_tf",
+        "own_a",
+        "teacher-forced GPT reply k vs Llama's reply on its own history",
+    ),
+    (
+        "gpt_tf",
+        "gpt",
+        "teacher-forced GPT reply k vs Llama's reply on GPT history",
+    ),
 ]
 N_BOOT = 2000
 
 
 def stats(x, y, groups, rng):
-    """Spearman and mean offset (x - y), with cluster-bootstrap 95% CIs over conversations."""
+    """Spearman and mean offset (x - y), with cluster-bootstrap 95% CIs over
+    conversations."""
+
     def point(idx):
         return spearmanr(x[idx], y[idx])[0], float(np.mean(x[idx] - y[idx]))
+
     by_group = defaultdict(list)
     for i, g in enumerate(groups):
         by_group[g].append(i)
@@ -32,12 +56,24 @@ def stats(x, y, groups, rng):
     rho, off = point(np.arange(len(x)))
     boots = []
     for _ in range(N_BOOT):
-        idx = np.concatenate([by_group[keys[j]] for j in rng.integers(len(keys), size=len(keys))])
+        idx = np.concatenate(
+            [by_group[keys[j]] for j in rng.integers(len(keys), size=len(keys))]
+        )
         boots.append(point(idx))
     b = np.array(boots, dtype=float)
-    ci = lambda col: [float(np.nanpercentile(b[:, col], 2.5)), float(np.nanpercentile(b[:, col], 97.5))]
-    return {"n_units": len(x), "n_convs": len(keys), "spearman": float(rho), "spearman_ci": ci(0),
-            "offset": off, "offset_ci": ci(1), "sd_y": float(np.std(y))}
+    ci = lambda col: [
+        float(np.nanpercentile(b[:, col], 2.5)),
+        float(np.nanpercentile(b[:, col], 97.5)),
+    ]
+    return {
+        "n_units": len(x),
+        "n_convs": len(keys),
+        "spearman": float(rho),
+        "spearman_ci": ci(0),
+        "offset": off,
+        "offset_ci": ci(1),
+        "sd_y": float(np.std(y)),
+    }
 
 
 def main():
@@ -45,9 +81,16 @@ def main():
     ap.add_argument("out_dir")
     args = ap.parse_args()
     rng = np.random.default_rng(0)
-    domain = {c["hash"]: c["domain"] for c in read_jsonl(os.path.join(args.out_dir, "histories.jsonl"))}
+    domain = {
+        c["hash"]: c["domain"]
+        for c in read_jsonl(os.path.join(args.out_dir, "histories.jsonl"))
+    }
     labels_path = os.path.join(args.out_dir, "turn_labels.jsonl")
-    dep = {(r["hash"], r["k"]): r["label"] for r in read_jsonl(labels_path)} if os.path.exists(labels_path) else {}
+    dep = (
+        {(r["hash"], r["k"]): r["label"] for r in read_jsonl(labels_path)}
+        if os.path.exists(labels_path)
+        else {}
+    )
     groups = DOMAINS + (["dependent", "standalone"] if dep else []) + ["all"]
 
     def in_group(key, g):
@@ -63,43 +106,100 @@ def main():
 
     writers = sorted({w for u in units.values() for w in u})
     kept = {w: sum(w in u for u in units.values()) for w in writers}
-    # Scored-turn sampling noise: within-unit SD across samples vs SD of unit means.
+    # Scored-turn sampling noise: within-unit SD across samples vs SD of unit
+    # means.
     noise = {}
     for w in writers:
-        sds = [np.std(v, ddof=1) for (h, k, ww), v in samples.items() if ww == w and len(v) > 1]
+        sds = [
+            np.std(v, ddof=1)
+            for (h, k, ww), v in samples.items()
+            if ww == w and len(v) > 1
+        ]
         means = [u[w] for u in units.values() if w in u]
         if sds:
-            noise[w] = {"within_unit_sd": float(np.mean(sds)), "between_unit_sd": float(np.std(means))}
+            noise[w] = {
+                "within_unit_sd": float(np.mean(sds)),
+                "between_unit_sd": float(np.std(means)),
+            }
 
     results = []
     for x_w, y_w, what in COMPARISONS:
         for d in groups:
-            keys = [key for key, u in units.items() if x_w in u and y_w in u and in_group(key, d)]
+            keys = [
+                key
+                for key, u in units.items()
+                if x_w in u and y_w in u and in_group(key, d)
+            ]
             if len(keys) < 5:
                 continue
             x = np.array([units[key][x_w] for key in keys])
             y = np.array([units[key][y_w] for key in keys])
-            results.append({"x": x_w, "y": y_w, "what": what, "domain": d,
-                            **stats(x, y, [key[0] for key in keys], rng)})
+            results.append({
+                "x": x_w,
+                "y": y_w,
+                "what": what,
+                "domain": d,
+                **stats(x, y, [key[0] for key in keys], rng),
+            })
     if dep:
         kept["turn labels"] = dict(sorted(Counter(dep.values()).items()))
-    json.dump({"kept_units": kept, "noise": noise, "comparisons": results},
-              open(os.path.join(args.out_dir, "results.json"), "w"), indent=1)
+    json.dump(
+        {"kept_units": kept, "noise": noise, "comparisons": results},
+        open(os.path.join(args.out_dir, "results.json"), "w"),
+        indent=1,
+    )
 
-    lines = ["# History-writer sanity check: results", "",
-             "Generated by `analyze.py`. Offset = mean(x - y) in projection units; sd_y = SD of y across units.", "",
-             "## Units kept per writer", "", "| writer | units |", "|---|---|"]
+    lines = [
+        "# History-writer sanity check: results",
+        "",
+        (
+            "Generated by `analyze.py`. Offset = mean(x - y) in projection"
+            " units; sd_y = SD of y across units."
+        ),
+        "",
+        "## Units kept per writer",
+        "",
+        "| writer | units |",
+        "|---|---|",
+    ]
     lines += [f"| {w} | {n} |" for w, n in kept.items()]
-    lines += ["", "## Scored-turn sampling noise", "", "| writer | mean within-unit SD | between-unit SD |", "|---|---|---|"]
-    lines += [f"| {w} | {v['within_unit_sd']:.3f} | {v['between_unit_sd']:.3f} |" for w, v in noise.items()]
-    lines += ["", "## Comparisons", "",
-              "| x | y | domain | n units (convs) | Spearman [95% CI] | offset [95% CI] | sd_y |", "|---|---|---|---|---|---|---|"]
+    lines += [
+        "",
+        "## Scored-turn sampling noise",
+        "",
+        "| writer | mean within-unit SD | between-unit SD |",
+        "|---|---|---|",
+    ]
+    lines += [
+        f"| {w} | {v['within_unit_sd']:.3f} | {v['between_unit_sd']:.3f} |"
+        for w, v in noise.items()
+    ]
+    lines += [
+        "",
+        "## Comparisons",
+        "",
+        (
+            "| x | y | domain | n units (convs) | Spearman [95% CI] | offset"
+            " [95% CI] | sd_y |"
+        ),
+        "|---|---|---|---|---|---|---|",
+    ]
     for r in results:
-        lines.append(f"| {r['x']} | {r['y']} | {r['domain']} | {r['n_units']} ({r['n_convs']}) | "
-                     f"{r['spearman']:.2f} [{r['spearman_ci'][0]:.2f}, {r['spearman_ci'][1]:.2f}] | "
-                     f"{r['offset']:.2f} [{r['offset_ci'][0]:.2f}, {r['offset_ci'][1]:.2f}] | {r['sd_y']:.2f} |")
-    lines += ["", "Comparisons: " + "; ".join(f"`{x}` vs `{y}`: {what}" for x, y, what in COMPARISONS)]
-    open(os.path.join(args.out_dir, "REPORT.md"), "w").write("\n".join(lines) + "\n")
+        lines.append(
+            f"| {r['x']} | {r['y']} | {r['domain']} | {r['n_units']}"
+            f" ({r['n_convs']}) | {r['spearman']:.2f}"
+            f" [{r['spearman_ci'][0]:.2f}, {r['spearman_ci'][1]:.2f}] |"
+            f" {r['offset']:.2f} [{r['offset_ci'][0]:.2f},"
+            f" {r['offset_ci'][1]:.2f}] | {r['sd_y']:.2f} |"
+        )
+    lines += [
+        "",
+        "Comparisons: "
+        + "; ".join(f"`{x}` vs `{y}`: {what}" for x, y, what in COMPARISONS),
+    ]
+    open(os.path.join(args.out_dir, "REPORT.md"), "w").write(
+        "\n".join(lines) + "\n"
+    )
     print("\n".join(lines))
 
 

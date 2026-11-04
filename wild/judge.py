@@ -1,15 +1,25 @@
-"""Label conversation domains with Llama 3.3 70B (vLLM, greedy) and select conversations.
+"""Label conversation domains with Llama 3.3 70B (vLLM, greedy) and select
+conversations.
 
-Usage: judge.py CONVS_JSONL RUN_DIR --per-domain N
-Writes RUN_DIR/labels.jsonl (all candidates) and RUN_DIR/selected.jsonl (up to N per domain, in
-the shuffled order of CONVS_JSONL). Turns whose prompt doesn't fit are dropped later, in generate.
+Usage: judge.py CONVS_JSONL RUN_DIR --per-domain N Writes RUN_DIR/labels.jsonl
+(all candidates) and RUN_DIR/selected.jsonl (up to N per domain, in the shuffled
+order of CONVS_JSONL). Turns whose prompt doesn't fit are dropped later, in
+generate.
 """
-import argparse, os
+
+import argparse
 from collections import Counter
+import os
+
 import torch
 from transformers import AutoTokenizer
-from vllm import LLM, SamplingParams
-from wcommon import DOMAINS, MODEL, prompt_ids, read_jsonl, write_jsonl
+from vllm import LLM
+from vllm import SamplingParams
+from wcommon import DOMAINS
+from wcommon import MODEL
+from wcommon import prompt_ids
+from wcommon import read_jsonl
+from wcommon import write_jsonl
 
 PROMPT = """Below are the user messages from a chat between a user and an AI assistant.
 
@@ -26,7 +36,9 @@ Answer with the label only."""
 
 
 def judge_prompt(users):
-    msgs = "\n\n".join(f"[User message {i + 1}] {u[:400]}" for i, u in enumerate(users[:12]))
+    msgs = "\n\n".join(
+        f"[User message {i + 1}] {u[:400]}" for i, u in enumerate(users[:12])
+    )
     return [{"role": "user", "content": PROMPT.format(msgs=msgs)}]
 
 
@@ -42,18 +54,33 @@ def main():
         labels = {r["hash"]: r["domain"] for r in read_jsonl(labels_path)}
     else:
         tok = AutoTokenizer.from_pretrained(MODEL)
-        llm = LLM(MODEL, dtype="bfloat16", max_model_len=8192, gpu_memory_utilization=0.92,
-                  tensor_parallel_size=torch.cuda.device_count())
-        outs = llm.generate([{"prompt_token_ids": prompt_ids(tok, judge_prompt(c["users"]))} for c in convs],
-                            SamplingParams(temperature=0, max_tokens=5))
+        llm = LLM(
+            MODEL,
+            dtype="bfloat16",
+            max_model_len=8192,
+            gpu_memory_utilization=0.92,
+            tensor_parallel_size=torch.cuda.device_count(),
+        )
+        outs = llm.generate(
+            [
+                {"prompt_token_ids": prompt_ids(tok, judge_prompt(c["users"]))}
+                for c in convs
+            ],
+            SamplingParams(temperature=0, max_tokens=5),
+        )
         labels = {}
         for c, o in zip(convs, outs):
             word = o.outputs[0].text.strip().lower().strip(".")
             labels[c["hash"]] = word if word in DOMAINS else "other"
-        write_jsonl(labels_path, [{"hash": h, "domain": d} for h, d in labels.items()])
+        write_jsonl(
+            labels_path, [{"hash": h, "domain": d} for h, d in labels.items()]
+        )
         del llm
     print("labels:", Counter(labels.values()))
-    print("labels among keyword hits:", Counter((tuple(c["kw"]), labels[c["hash"]]) for c in convs if c["kw"]))
+    print(
+        "labels among keyword hits:",
+        Counter((tuple(c["kw"]), labels[c["hash"]]) for c in convs if c["kw"]),
+    )
     selected = []
     for d in DOMAINS:
         picks = [c for c in convs if labels[c["hash"]] == d][: args.per_domain]

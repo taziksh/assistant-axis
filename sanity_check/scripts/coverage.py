@@ -1,6 +1,10 @@
-"""Which long English WildChat-1M conversations exist in every WildChat-50m writer set?"""
-import json, sys
+"""Which long English WildChat-1M conversations exist in every WildChat-50m
+writer set?"""
+
 from concurrent.futures import ThreadPoolExecutor
+import json
+import sys
+
 from huggingface_hub import HfFileSystem
 import pyarrow.parquet as pq
 
@@ -13,9 +17,11 @@ WRITERS = [
 ]
 fs = HfFileSystem()
 
+
 def read_cols(path, cols):
     with fs.open(path) as f:
         return pq.read_table(f, columns=cols).to_pydict()
+
 
 def hashes_with_turns(repo, cols=("conversation_hash", "turn")):
     files = fs.glob(f"datasets/{repo}/data/*.parquet")
@@ -27,8 +33,13 @@ def hashes_with_turns(repo, cols=("conversation_hash", "turn")):
             out[h] = {c: d[c][i] for c in cols if c != "conversation_hash"}
     return out
 
-orig = hashes_with_turns("allenai/WildChat-1M", ("conversation_hash", "turn", "language"))
-long_en = {h for h, v in orig.items() if v["language"] == "English" and v["turn"] >= 6}
+
+orig = hashes_with_turns(
+    "allenai/WildChat-1M", ("conversation_hash", "turn", "language")
+)
+long_en = {
+    h for h, v in orig.items() if v["language"] == "English" and v["turn"] >= 6
+}
 print("WildChat-1M English, >=6 user turns:", len(long_en))
 common = set(long_en)
 for w in WRITERS:
