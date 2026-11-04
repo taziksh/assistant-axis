@@ -7,6 +7,9 @@ Prints markdown for:
   openings (results/harmfloor: spread, most drifted, turn 1).
 - Table 3: activation capping on jailbreaks (results/jb/cap, results/shah/cap).
 - Table 4: capability cost of the cap (results/cap).
+- Appendix A1-A2: Table 3 by each source dataset's own categories (MHJ: HarmBench
+  semantic categories; DAN: TrustAIRLab's 13). A3: Table 2's harmful rate by
+  CategoricalHarmfulQA category and opening type.
 Harmful = the paper judge's enough_info or enough_info_and_follow_perfectly.
 CIs: 95% bootstrap, 5,000 draws, seed 0; the resampling unit is named in each
 table.
@@ -74,7 +77,9 @@ def openings(gen_path, judged_path):
     rows = collections.defaultdict(list)
     for r in read(gen_path):
         if r["id"] in score:
-            rows[(r["hash"], r["k"], r["proj"])].append(score[r["id"]] in HARMFUL)
+            rows[(r["hash"], r["k"], r["proj"])].append(
+                score[r["id"]] in HARMFUL
+            )
     return [(p, float(np.mean(v)), len(v)) for (_, _, p), v in rows.items()]
 
 
@@ -91,7 +96,9 @@ def table2(res):
         "Real WildChat, turn 1 only": [os.path.join(real, "harm_wild_k1")],
     }
     print("Table 2. Harmful-response rate vs drift (40 questions/opening).\n")
-    print("| Openings | n | Harmful | Spearman ρ, projection vs harm (95% CI) |")
+    print(
+        "| Openings | n | Harmful | Spearman ρ, projection vs harm (95% CI) |"
+    )
     print("|---|---|---|---|")
     for name, stems in sets.items():
         ops = [
@@ -114,9 +121,21 @@ def table2(res):
 
 def table3(res):
     sets = [
-        ("Shah-style, rebuilt", os.path.join(res, "shah", "cap", "shah"), "category"),
-        ("DAN (real templates)", os.path.join(res, "jb", "cap", "itw"), "behavior"),
-        ("MHJ (human red-teamers)", os.path.join(res, "jb", "cap", "mhj"), "behavior"),
+        (
+            "Shah-style, rebuilt",
+            os.path.join(res, "shah", "cap", "shah"),
+            "category",
+        ),
+        (
+            "DAN (real templates)",
+            os.path.join(res, "jb", "cap", "itw"),
+            "behavior",
+        ),
+        (
+            "MHJ (human red-teamers)",
+            os.path.join(res, "jb", "cap", "mhj"),
+            "behavior",
+        ),
     ]
     print("Table 3. Harmful rate, uncapped vs capped.\n")
     print("| Set | n | Uncapped | Capped | Change, points (95% CI) | Unit |")
@@ -134,7 +153,9 @@ def table3(res):
             f"| {name} | {len(ids)} | {x:.1%} | {y:.1%} | {diff(pairs):+.1f}"
             f" ({lo:+.1f}, {hi:+.1f}) | {unit} |"
         )
-    print("\nCI: bootstrap over the unit column (all attempts on it together).\n")
+    print(
+        "\nCI: bootstrap over the unit column (all attempts on it together).\n"
+    )
 
 
 def table4(res):
@@ -153,20 +174,99 @@ def table4(res):
             # filters (2 rows per question), so flexible = all - strict.
             fixed = []
             for cond in ("none", "capped"):
-                rows = read(os.path.join(res, "cap", f"samples_stage1_{cond}_gsm8k.jsonl"))
+                rows = read(
+                    os.path.join(
+                        res, "cap", f"samples_stage1_{cond}_gsm8k.jsonl"
+                    )
+                )
                 n = len({r["doc_id"] for r in rows})
                 total = sum(r["exact_match"] for r in rows)
                 fixed.append((total - stage[cond]["gsm8k"] * n) / n)
-            print(f"| gsm8k | exact_match,flexible-extract | {fixed[0]:.3f} | {fixed[1]:.3f} |")
+            print(
+                f"| gsm8k | exact_match,flexible-extract | {fixed[0]:.3f} |"
+                f" {fixed[1]:.3f} |"
+            )
             continue
         print(f"| {t} | {metric} | {v:.3f} | {stage['capped'][t]:.3f} |")
+    print()
+
+
+def appendix_capping(res):
+    sets = [
+        ("A1. MHJ", os.path.join(res, "jb", "cap", "mhj"), "behavior"),
+        ("A2. DAN", os.path.join(res, "jb", "cap", "itw"), "behavior"),
+    ]
+    for title, stem, unit in sets:
+        a = verdicts(stem + "_none.judged_v3.2.jsonl")
+        b = verdicts(stem + "_capped.judged_v3.2.jsonl")
+        meta = {r["id"]: r for r in read(stem + "_none.jsonl")}
+        by_cat = collections.defaultdict(list)
+        for i in a:
+            if i in b:
+                by_cat[meta[i]["category"]].append(i)
+        print(f"Table {title}: harmful rate by category, uncapped vs capped.\n")
+        print("| Category | n | Uncapped | Capped | Change, points (95% CI) |")
+        print("|---|---|---|---|---|")
+        rate = lambda ids, s: np.mean([s[i] in HARMFUL for i in ids])
+        for cat, ids in sorted(by_cat.items(), key=lambda kv: -rate(kv[1], a)):
+            pairs = [(a[i] in HARMFUL, b[i] in HARMFUL) for i in ids]
+            diff = lambda p: 100 * np.mean([y - x for x, y in p])
+            lo, hi = ci(pairs, diff, [meta[i][unit] for i in ids])
+            print(
+                f"| {cat} | {len(ids)} | {rate(ids, a):.0%} |"
+                f" {rate(ids, b):.0%} | {diff(pairs):+.0f} ({lo:+.0f},"
+                f" {hi:+.0f}) |"
+            )
+        print()
+
+
+def appendix_harm_categories(res):
+    sets = [
+        ("Role openings", [os.path.join(res, "roles_q2", "harm_wild")]),
+        (
+            "Real openings",
+            [
+                os.path.join(res, "harmfloor", s)
+                for s in ("harm_wild", "harm_wild_lowest", "harm_wild_k1")
+            ],
+        ),
+    ]
+    counts = collections.defaultdict(
+        lambda: collections.defaultdict(lambda: [0, 0])
+    )
+    for name, stems in sets:
+        for stem in stems:
+            score = verdicts(stem + ".judged_v3.2.jsonl")
+            for r in read(stem + ".jsonl"):
+                if r["id"] in score:
+                    c = counts[r["category"]][name]
+                    c[0] += 1
+                    c[1] += score[r["id"]] in HARMFUL
+    print("Table A3. Harmful rate by CategoricalHarmfulQA category.\n")
+    print(
+        "| Category | Role openings: n, harmful | Real openings: n, harmful |"
+    )
+    print("|---|---|---|")
+    total = lambda v: sum(x[1] for x in v.values()) / sum(
+        x[0] for x in v.values()
+    )
+    for cat, v in sorted(counts.items(), key=lambda kv: -total(kv[1])):
+        cells = [f"{v[n][0]}, {v[n][1] / v[n][0]:.1%}" for n, _ in sets]
+        print(f"| {cat} | {cells[0]} | {cells[1]} |")
     print()
 
 
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
     res = sys.argv[1] if len(sys.argv) > 1 else os.path.join(here, "results")
-    for table in (table1, table2, table3, table4):
+    for table in (
+        table1,
+        table2,
+        table3,
+        table4,
+        appendix_capping,
+        appendix_harm_categories,
+    ):
         table(res)
 
 
