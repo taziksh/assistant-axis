@@ -1,33 +1,28 @@
-"""Redraw the paper's figures with our data.
+"""Redraw the paper's figures with our data, one plot per figure.
 
 Usage: figures.py [RESULTS_DIR] [OUT_DIR]   (defaults: wild/results, wild/figures)
-Ours is always dark red and the paper always grey; error bars and bands on our
-numbers are 95% CIs. Writes PNGs:
-- fig25_drift.png: the paper's Fig. 25 (drift by turn, Llama 3.3 70B). (a) Our
-  real WildChat chats (the same chats at every turn) against the paper's four
-  domains. (b, c) Our projection of the paper's two released Llama
-  conversations against the paper's curve for the same domain and simulated
-  user.
-- fig8_harm_vs_drift.png: the paper's Fig. 8 (harmful rate vs the opening's
-  projection, one dot per opening). (a) The paper's own figure, which is Qwen 3
-  32B on a raw projection scale, so it sits beside ours rather than on the same
-  axes. (b, c) Ours with CategoricalHarmfulQA questions, with the mean harmful
-  rate in projection bins.
-- fig10_capping.png: the paper's Fig. 10 (Llama row): harmful rate and
-  capability scores, uncapped vs capped.
-Paper curves come from paper_fig25.json (digitized from the figure); paper bars
-are the values printed on Fig. 10; the paper's Fig. 8 is downloaded from arXiv.
+Writes each figure as PNG (300 dpi) and SVG:
+- drift_real_chats: the paper's Fig. 25 (drift by turn, Llama 3.3 70B). Our
+  real WildChat chats (the same chats at every turn, mean and 95% CI) against
+  the paper's four domains (digitized, paper_fig25.json). The scale check on
+  the paper's own conversations is Table 1c.
+- harm_vs_drift: the paper's Fig. 8 (harmful rate vs the opening's
+  projection). Ours with CategoricalHarmfulQA questions: one dot per opening,
+  and the mean in 8 equal-count bins with 95% CIs. The paper's figure is Qwen 3
+  32B on a raw projection scale, so it is not redrawn on these axes.
+- capping_jailbreaks, capping_capability: the paper's Fig. 10 (Llama row),
+  uncapped vs capped, with the paper's printed values.
+Colors: the first two slots of the dataviz reference palette (validated
+together); the paper's domain curves are grey context.
 """
 
 import collections
 import os
 import sys
-import urllib.request
 
 import matplotlib
 
 matplotlib.use("Agg")
-import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.stats import spearmanr
@@ -39,17 +34,18 @@ from tables import HARMFUL
 from tables import openings
 from tables import paper_fig25
 from tables import read
-from tables import RELEASED_USER
 from tables import verdicts
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OURS = "#7a1010"
-OURS_LIGHT = "#d98c8c"
-PAPER = "#6b6b6b"
-PAPER_LIGHT = "#bdbdbd"
-PAPER_FIG8_URL = (
-    "https://arxiv.org/html/2601.10387v1/img/Axis_Assistant-Fig5.png"
-)
+SERIES_1 = "#2a78d6"  # Blue.
+SERIES_2 = "#eb6834"  # Orange.
+CONTEXT = "#b9b7ae"  # Grey context lines.
+SURFACE = "#fcfcfb"
+INK = "#0b0b0b"
+INK_2 = "#52514e"
+MUTED = "#898781"
+GRID = "#e1e0d9"
+AXIS = "#c3c2b7"
 # Llama 3.3 70B row of the paper's Fig. 10, as printed on the bars.
 PAPER_FIG10 = {
     "jailbreak": (0.65, 0.33),
@@ -62,31 +58,58 @@ BENCH_NAMES = {
     "ifeval": "IFEval",
     "mmlu_pro": "MMLU Pro",
     "gsm8k": "GSM8k",
-    "eq_bench": "EQ-Bench",
-}
-DOMAIN_MARKERS = {
-    "coding": "o",
-    "writing": "s",
-    "therapy": "^",
-    "philosophy": "D",
+    "eq_bench": "EQ-Bench (÷100)",
 }
 
 plt.rcParams.update({
-    "font.size": 10,
-    "axes.titlesize": 10.5,
-    "axes.labelsize": 10,
-    "legend.fontsize": 8.5,
+    "font.family": ["Helvetica Neue", "Helvetica", "Arial", "DejaVu Sans"],
+    "font.size": 11,
+    "axes.titlesize": 13,
+    "axes.titleweight": "semibold",
+    "axes.titlelocation": "left",
+    "axes.titlepad": 22,
+    "axes.labelsize": 11,
+    "axes.labelcolor": INK_2,
+    "axes.edgecolor": AXIS,
+    "axes.linewidth": 1,
+    "axes.facecolor": SURFACE,
+    "figure.facecolor": SURFACE,
+    "xtick.color": MUTED,
+    "ytick.color": MUTED,
+    "xtick.labelcolor": INK_2,
+    "ytick.labelcolor": INK_2,
+    "legend.fontsize": 10,
+    "legend.frameon": False,
+    "text.color": INK,
+    "svg.fonttype": "none",
 })
 
 
-def style(ax):
+def new_axes(title, subtitle, size=(7.5, 4.6)):
+    fig, ax = plt.subplots(figsize=size)
+    ax.set_title(title)
+    ax.text(
+        0,
+        1.02,
+        subtitle,
+        transform=ax.transAxes,
+        color=INK_2,
+        fontsize=10,
+        va="bottom",
+    )
     ax.spines[["top", "right"]].set_visible(False)
-    ax.grid(axis="y", color="#e6e6e6", linewidth=0.8)
+    ax.grid(axis="y", color=GRID, linewidth=1)
     ax.set_axisbelow(True)
+    ax.tick_params(length=0, pad=6)
+    return fig, ax
 
 
-def title(ax, letter, text, **kw):
-    ax.set_title(f"({letter}) {text}", loc="left", **kw)
+def save(fig, out, name):
+    for ext, kw in (("png", {"dpi": 300}), ("svg", {})):
+        fig.savefig(
+            os.path.join(out, f"{name}.{ext}"), bbox_inches="tight", **kw
+        )
+    plt.close(fig)
 
 
 def fig_drift(res, out):
@@ -96,321 +119,285 @@ def fig_drift(res, out):
             by_chat[r["hash"]][r["k"]] = r["proj"]
     turns = list(range(1, 13))
     chats = [c for c in by_chat.values() if all(k in c for k in turns)]
-    paper = paper_fig25()
-    fig, axes = plt.subplots(
-        1,
-        3,
-        figsize=(13, 4),
-        sharey=True,
-        gridspec_kw={"width_ratios": [1.5, 1, 1], "wspace": 0.12},
+    fig, ax = new_axes(
+        "Real chats drift like the paper's coding conversations",
+        "Llama 3.3 70B, Assistant Axis projection by turn (higher = more"
+        " Assistant-like)",
     )
-    ax = axes[0]
-    for domain, marker in DOMAIN_MARKERS.items():
+    paper = paper_fig25()
+    for domain in ("coding", "writing", "therapy", "philosophy"):
         curves = [v for (d, _), v in paper.items() if d == domain]
         mean = [
             np.mean([c[t] for c in curves if c[t] is not None])
             for t in range(15)
         ]
-        ax.plot(
-            range(1, 16),
-            mean,
-            "-",
-            marker=marker,
-            ms=3.5,
-            lw=1.1,
-            color=PAPER_LIGHT,
-            mfc=PAPER,
-            mec=PAPER,
-        )
-        ax.text(15.4, mean[-1], domain, color=PAPER, va="center", fontsize=8.5)
+        ax.plot(range(1, 16), mean, color=CONTEXT, lw=1.5, zorder=2)
+        ax.text(15.3, mean[-1], domain, color=MUTED, va="center", fontsize=10)
     bands = [ci([c[k] for c in chats], np.mean) for k in turns]
     ax.fill_between(
         turns,
         [b[0] for b in bands],
         [b[1] for b in bands],
-        color=OURS,
-        alpha=0.15,
+        color=SERIES_1,
+        alpha=0.12,
         lw=0,
+        zorder=3,
     )
     ax.plot(
         turns,
         [np.mean([c[k] for c in chats]) for k in turns],
         "-o",
-        ms=4,
-        lw=2.2,
-        color=OURS,
-        label=f"ours: real WildChat chats (n = {len(chats)})",
+        color=SERIES_1,
+        lw=2,
+        ms=6,
+        mec=SURFACE,
+        mew=1.5,
+        zorder=4,
+        label=f"Ours: real WildChat chats (n = {len(chats)}, 95% CI)",
     )
     ax.plot(
         [],
         [],
-        "-o",
-        ms=3.5,
-        color=PAPER_LIGHT,
-        mfc=PAPER,
-        mec=PAPER,
-        label="paper: simulated conversations, by domain",
+        color=CONTEXT,
+        lw=1.5,
+        label="Paper: simulated conversations, mean per domain",
     )
-    title(ax, "a", "Real chats vs the paper's domains")
-    ax.set_ylabel("Assistant Axis projection")
-    ax.legend(frameon=False, loc="lower left")
-    ax.set_xlim(0.5, 17.5)
-    scale = collections.defaultdict(dict)
-    for r in read(os.path.join(res, "drift_scale", "projections.jsonl")):
-        scale[r["hash"]][r["k"]] = r["proj"]
-    for ax, letter, (domain, user) in zip(
-        axes[1:], "bc", RELEASED_USER.items()
-    ):
-        curve = paper[(domain, user)]
-        ax.plot(
-            [t + 1 for t, v in enumerate(curve) if v is not None],
-            [v for v in curve if v is not None],
-            "-o",
-            ms=3.5,
-            lw=1.4,
-            color=PAPER,
-            label=f"paper: mean of 100 ({user} as user)",
-        )
-        v = scale[f"paper-{domain}"]
-        ks = sorted(v)
-        ax.plot(
-            ks,
-            [v[k] for k in ks],
-            "-o",
-            ms=4,
-            lw=1.8,
-            color=OURS,
-            label="ours: their one released conversation",
-        )
-        title(ax, letter, f"Scale check: {domain}")
-        ax.legend(frameon=False, loc="lower left")
-    for ax in axes:
-        style(ax)
-        ax.set_xlabel("Turn")
-        ax.set_xticks([1, 5, 10, 15])
-        ax.set_ylim(-0.8, 1.6)
-    fig.savefig(out, dpi=220, bbox_inches="tight")
-    plt.close(fig)
-
-
-def paper_fig8():
-    path = os.path.join(HERE, "data", "paper", "fig8.png")
-    if not os.path.exists(path):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        urllib.request.urlretrieve(PAPER_FIG8_URL, path)
-    return mpimg.imread(path)
+    ax.set_xlabel("Turn")
+    ax.set_xticks([1, 3, 6, 9, 12, 15])
+    ax.set_xlim(0.5, 17.6)
+    ax.set_ylim(-0.6, 1.4)
+    ax.legend(loc="upper right")
+    save(fig, out, "drift_real_chats")
 
 
 def binned(x, y, bins=8):
     """Mean of y and its 95% CI in equal-count bins of x."""
     order = np.argsort(x)
-    out = []
+    rows = []
     for idx in np.array_split(order, bins):
         lo, hi = ci(list(y[idx]), np.mean)
-        out.append((x[idx].mean(), y[idx].mean(), lo, hi))
-    return np.array(out)
+        rows.append((x[idx].mean(), y[idx].mean(), lo, hi))
+    return np.array(rows)
 
 
 def fig_harm(res, out):
-    real = os.path.join(res, "harmfloor")
     sets = [
+        ("Paper's role-prompt openings", SERIES_1, ["roles_q2/harm_wild"]),
         (
-            "ours: paper's role-prompt openings",
-            [os.path.join(res, "roles_q2", "harm_wild")],
-        ),
-        (
-            "ours: real WildChat openings",
+            "Real WildChat openings",
+            SERIES_2,
             [
-                os.path.join(real, s)
-                for s in ("harm_wild", "harm_wild_lowest", "harm_wild_k1")
+                "harmfloor/harm_wild",
+                "harmfloor/harm_wild_lowest",
+                "harmfloor/harm_wild_k1",
             ],
         ),
     ]
-    fig = plt.figure(figsize=(11, 9.5))
-    grid = fig.add_gridspec(
-        2, 2, height_ratios=[1.05, 1], hspace=0.28, wspace=0.08
+    fig, ax = new_axes(
+        "Drift doesn't predict harm here",
+        "Llama 3.3 70B, one dot per opening: harmful rate over 40"
+        " CategoricalHarmfulQA questions",
     )
-    ax = fig.add_subplot(grid[0, :])
-    ax.imshow(paper_fig8())
-    ax.axis("off")
-    title(
-        ax,
-        "a",
-        "Paper: Qwen 3 32B, 440 questions (raw projection scale)",
-        color=PAPER,
-    )
-    first = None
-    for g, letter, (name, stems) in zip((0, 1), "bc", sets):
-        ax = fig.add_subplot(grid[1, g], sharey=first)
-        first = first or ax
+    rng = np.random.default_rng(0)
+    for name, color, stems in sets:
         ops = [
             o
             for s in stems
-            for o in openings(s + ".jsonl", s + ".judged_v3.2.jsonl")
+            for o in openings(
+                os.path.join(res, s + ".jsonl"),
+                os.path.join(res, s + ".judged_v3.2.jsonl"),
+            )
         ]
         x = np.array([o[0] for o in ops])
         y = np.array([o[1] for o in ops])
-        jitter = np.random.default_rng(0).uniform(-0.006, 0.006, len(y))
-        ax.scatter(x, y + jitter, s=9, alpha=0.3, color=OURS_LIGHT, lw=0)
+        ax.scatter(
+            x,
+            y + rng.uniform(-0.005, 0.005, len(y)),
+            s=10,
+            color=color,
+            alpha=0.18,
+            lw=0,
+            zorder=2,
+        )
         b = binned(x, y)
+        rho = lambda o: spearmanr([p[0] for p in o], [p[1] for p in o])[0]
+        lo, hi = ci(ops, rho)
         ax.errorbar(
             b[:, 0],
             b[:, 1],
             yerr=[b[:, 1] - b[:, 2], b[:, 3] - b[:, 1]],
             fmt="-o",
-            ms=4,
-            lw=1.8,
-            capsize=2,
-            color=OURS,
-            label="mean in 8 bins (95% CI)",
+            color=color,
+            lw=2,
+            ms=6,
+            mec=SURFACE,
+            mew=1.5,
+            elinewidth=1.2,
+            capsize=0,
+            zorder=4,
+            label=(
+                f"{name} (n = {len(ops)}): ρ = {rho(ops):+.2f}"
+                f" ({lo:+.2f}, {hi:+.2f})"
+            ),
         )
-        rho = lambda o: spearmanr([p[0] for p in o], [p[1] for p in o])[0]
-        lo, hi = ci(ops, rho)
-        ax.text(
-            0.98,
-            0.97,
-            f"ours: ρ = {rho(ops):+.2f} ({lo:+.2f}, {hi:+.2f})\n"
-            "paper: |r| = 0.39–0.52",
-            transform=ax.transAxes,
-            ha="right",
-            va="top",
-            fontsize=8.5,
-        )
-        title(ax, letter, f"{name[0].upper()}{name[1:]} ({len(ops)})")
-        ax.set_xlabel("Projection of the opening reply")
-        if g == 0:
-            ax.set_ylabel("Rate of harmful responses")
-            ax.legend(frameon=False, loc="upper left", bbox_to_anchor=(0, 0.86))
-        else:
-            ax.tick_params(labelleft=False)
-        style(ax)
-    first.set_ylim(-0.02, 0.32)
-    fig.savefig(out, dpi=220, bbox_inches="tight")
-    plt.close(fig)
-
-
-def bar_pair(ax, x, w, a, b, colors, label=None, errs=None):
-    """Two bars (uncapped, capped) centered at x, with values printed above."""
-    for off, v, c, e, cond in (
-        (-w / 2, a, colors[0], errs[0] if errs else None, "no cap"),
-        (w / 2, b, colors[1], errs[1] if errs else None, "capped"),
-    ):
-        ax.bar(
-            x + off,
-            v,
-            w,
-            color=c,
-            yerr=None if e is None else [[v - e[0]], [e[1] - v]],
-            capsize=2,
-            error_kw={"lw": 1},
-            label=f"{label}, {cond}" if label else None,
-        )
-        top = v if e is None else e[1]
-        ax.text(x + off, top + 0.012, f"{v:.2f}", ha="center", fontsize=7.5)
-
-
-def fig_capping(res, out):
-    sets = [
-        ("MHJ", os.path.join(res, "jb", "cap", "mhj"), "behavior"),
-        ("DAN", os.path.join(res, "dan3", "cap", "itw"), "behavior"),
-        (
-            "Shah et al.\n(regenerated)",
-            os.path.join(res, "shah", "cap", "shah"),
-            "category",
-        ),
-    ]
-    fig, (ax1, ax2) = plt.subplots(
+    ax.set_xlabel(
+        "Assistant Axis projection of the opening reply  (← role-playing ·"
+        " Assistant-like →)"
+    )
+    ax.set_ylabel("Harmful rate")
+    ax.set_ylim(-0.01, 0.25)
+    ax.legend(loc="upper left", title="Binned means, 95% CI", title_fontsize=10)
+    ax.text(
         1,
-        2,
-        figsize=(14, 4.2),
-        gridspec_kw={"wspace": 0.15, "width_ratios": [1, 1.25]},
+        -0.2,
+        "Paper (Qwen 3 32B, its own questions): |r| = 0.39–0.52.",
+        transform=ax.transAxes,
+        ha="right",
+        color=INK_2,
+        fontsize=9.5,
     )
-    w = 0.38
-    bar_pair(
-        ax1,
-        0,
-        w,
-        *PAPER_FIG10["jailbreak"],
-        (PAPER, PAPER_LIGHT),
-        label="paper",
-    )
-    for g, (name, stem, unit) in enumerate(sets, 1):
+    save(fig, out, "harm_vs_drift")
+
+
+def bars(ax, x, values, errs, color, label, offset, width, above=None):
+    """Value-labeled bars with optional 95% CI whiskers.
+
+    above: per-bar heights the value label must clear (e.g. a reference tick).
+    """
+    for i, (v, e) in enumerate(zip(values, errs)):
+        ax.bar(
+            x[i] + offset,
+            v,
+            width,
+            color=color,
+            edgecolor=SURFACE,
+            linewidth=1.5,
+            label=label if i == 0 else None,
+            zorder=3,
+        )
+        top = v
+        if e is not None:
+            ax.vlines(x[i] + offset, e[0], e[1], color=INK_2, lw=1.2, zorder=4)
+            top = e[1]
+        if above is not None:
+            top = max(top, above[i])
+        ax.text(
+            x[i] + offset,
+            top + 0.015,
+            f"{v:.2f}",
+            ha="center",
+            va="bottom",
+            fontsize=9.5,
+            color=INK_2,
+        )
+
+
+def fig_jailbreaks(res, out):
+    sets = [
+        ("MHJ", "jb/cap/mhj", "behavior"),
+        ("DAN", "dan3/cap/itw", "behavior"),
+        ("Shah et al.\n(regenerated)", "shah/cap/shah", "category"),
+    ]
+    names = ["Paper\n(persona jailbreaks)"]
+    none = [(PAPER_FIG10["jailbreak"][0], None)]
+    capped = [(PAPER_FIG10["jailbreak"][1], None)]
+    for name, stem, unit in sets:
+        stem = os.path.join(res, stem)
         a = verdicts(stem + "_none.judged_v3.2.jsonl")
         b = verdicts(stem + "_capped.judged_v3.2.jsonl")
         meta = {r["id"]: r for r in read(stem + "_none.jsonl")}
         ids = [i for i in a if i in b]
         units = [meta[i][unit] for i in ids]
-        rates, errs = [], []
-        for v in (a, b):
+        for v, dest in ((a, none), (b, capped)):
             hits = [float(v[i] in HARMFUL) for i in ids]
-            rates.append(np.mean(hits))
-            errs.append(ci(hits, np.mean, units))
-        bar_pair(
-            ax1,
-            g,
-            w,
-            *rates,
-            (OURS, OURS_LIGHT),
-            label="ours" if g == 1 else None,
-            errs=errs,
-        )
-    ax1.set_xticks(
-        range(len(sets) + 1),
-        ["Paper's persona\njailbreaks"] + [s[0] for s in sets],
+            dest.append((np.mean(hits), ci(hits, np.mean, units)))
+        names.append(name)
+    fig, ax = new_axes(
+        "The cap halves jailbreaks in the paper, not on our sets",
+        "Llama 3.3 70B, harmful-response rate (paper's judge); 95% CI on ours",
     )
-    ax1.set_ylabel("Jailbreak rate (harmful responses)")
-    ax1.set_ylim(0, 0.8)
-    title(ax1, "a", "Jailbreaks")
-    ax1.legend(frameon=False, ncol=2, loc="upper right")
+    x = np.arange(len(names))
+    w = 0.32
+    for off, rows, color, label in (
+        (-w / 2, none, SERIES_1, "No cap"),
+        (w / 2, capped, SERIES_2, "Capped"),
+    ):
+        bars(
+            ax,
+            x,
+            [v for v, _ in rows],
+            [e for _, e in rows],
+            color,
+            label,
+            off,
+            w,
+        )
+    ax.axvline(0.5, color=GRID, lw=1)
+    ax.set_xticks(x, names)
+    ax.set_ylabel("Harmful rate")
+    ax.set_ylim(0, 0.8)
+    ax.legend(loc="upper right", ncol=2)
+    save(fig, out, "capping_jailbreaks")
+
+
+def fig_capability(res, out):
     caps = capability_scores(res)
     names = [t for t in BENCH_NAMES if t in caps]
-    w = 0.2
-    for g, t in enumerate(names):
-        _, a, b, ses = caps[t]
-        div = 100 if t == "eq_bench" else 1  # EQ-Bench is on a 0-100 scale.
-        pa, pb = PAPER_FIG10[t]
-        for off, v, c, se, lab in (
-            (-1.5 * w, pa, PAPER, None, "paper, no cap"),
-            (-0.5 * w, pb, PAPER_LIGHT, None, "paper, capped"),
-            (0.5 * w, a, OURS, ses[0], "ours, no cap"),
-            (1.5 * w, b, OURS_LIGHT, ses[1], "ours, capped"),
-        ):
-            ax2.bar(
-                g + off,
-                v / div,
-                w,
-                color=c,
-                yerr=None if se is None else 1.96 * se / div,
-                capsize=2,
-                error_kw={"lw": 1},
-                label=lab if g == 0 else None,
-            )
-            ax2.text(
-                g + off,
-                (v + (1.96 * se if se else 0)) / div + 0.012,
-                f"{v:.1f}" if div > 1 else f"{v:.2f}",
-                ha="center",
-                fontsize=6.5,
-            )
-    ax2.set_xticks(range(len(names)), [BENCH_NAMES[t] for t in names])
-    ax2.set_ylabel("Score (EQ-Bench ÷ 100)")
-    ax2.set_ylim(0, 1.15)
-    title(ax2, "b", "Capabilities")
-    ax2.legend(frameon=False, ncol=4, loc="upper center", fontsize=7.5)
-    for ax in (ax1, ax2):
-        style(ax)
-    fig.savefig(out, dpi=220, bbox_inches="tight")
-    plt.close(fig)
+    if not names:
+        return
+    fig, ax = new_axes(
+        "The cap costs no capability, as in the paper",
+        "Llama 3.3 70B; bars are ours with 95% CI, black lines the paper's"
+        " values",
+    )
+    x = np.arange(len(names))
+    w = 0.32
+    div = np.array([100 if t == "eq_bench" else 1 for t in names])
+    for col, off, color, label in (
+        (0, -w / 2, SERIES_1, "No cap"),
+        (1, w / 2, SERIES_2, "Capped"),
+    ):
+        vals = np.array([caps[t][1 + col] for t in names]) / div
+        half = np.array([1.96 * caps[t][3][col] for t in names]) / div
+        paper = np.array([PAPER_FIG10[t][col] for t in names]) / div
+        bars(
+            ax,
+            x,
+            vals,
+            list(zip(vals - half, vals + half)),
+            color,
+            label,
+            off,
+            w,
+            above=paper + 0.01,
+        )
+        ax.hlines(
+            paper,
+            x + off - w * 0.42,
+            x + off + w * 0.42,
+            color=INK,
+            lw=2.4,
+            zorder=5,
+            label="Paper" if col == 0 else None,
+        )
+    ax.set_xticks(x, [BENCH_NAMES[t] for t in names])
+    ax.set_ylabel("Score")
+    ax.set_ylim(0, 1.15)
+    ax.legend(loc="upper center", ncol=3, bbox_to_anchor=(0.5, 1.03))
+    save(fig, out, "capping_capability")
 
 
 def main():
     res = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "results")
     out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(HERE, "figures")
     os.makedirs(out, exist_ok=True)
-    fig_drift(res, os.path.join(out, "fig25_drift.png"))
-    fig_harm(res, os.path.join(out, "fig8_harm_vs_drift.png"))
-    fig_capping(res, os.path.join(out, "fig10_capping.png"))
-    print(f"wrote 3 figures to {out}")
+    for old in os.listdir(out):
+        os.remove(os.path.join(out, old))
+    fig_drift(res, out)
+    fig_harm(res, out)
+    fig_jailbreaks(res, out)
+    fig_capability(res, out)
+    print(f"wrote 4 figures to {out}")
 
 
 if __name__ == "__main__":
