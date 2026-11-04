@@ -82,7 +82,7 @@ def pick_questions(path, per_category):
     out = []
     for c in sorted(
         by_cat
-    # Always draw 4, then keep the first per_category: smaller sets are subsets.
+        # Always draw 4, then keep the first per_category: smaller sets are subsets.
     ):
         out += rng.sample(by_cat[c], 4)[:per_category]
     return out
@@ -149,6 +149,11 @@ def main():
         ),
     )
     ap.add_argument(
+        "--all-turns",
+        action="store_true",
+        help="pool: reply at every user turn (1-12) instead of one random turn",
+    )
+    ap.add_argument(
         "--tag",
         default="",
         help="output suffix, so a second harm run doesn't overwrite the first",
@@ -177,6 +182,8 @@ def main():
             rng = random.Random(h)
             ks = list(range(1, min(len(c["users"]), MAX_TURN) + 1))
             rng.shuffle(ks)
+            if args.all_turns:  # Every turn, in order, while the prompt fits.
+                ks = sorted(ks)
             for k in ks:  # A random turn whose prompt fits.
                 p = prompt_ids(
                     tok, history(c["users"], c["gpt"], k, c.get("system"))
@@ -184,7 +191,8 @@ def main():
                 if len(p) <= MAX_PROMPT_TOKENS:
                     units.append((c, k))
                     prompts.append(p)
-                    break
+                    if not args.all_turns:
+                        break
         outs = llm.generate(
             [{"prompt_token_ids": p} for p in prompts],
             params(args.first_max_tokens),

@@ -47,8 +47,8 @@ torch.backends.cuda.enable_cudnn_sdp(False)
 
 # Prompt + new tokens per batch; KV cache is 0.33 MB/token and ~9 GB per GPU is
 # free on 2x H100.
-TOKEN_BUDGET = 20000
-MAX_BATCH = 48
+TOKEN_BUDGET = int(os.environ.get("CAP_TOKEN_BUDGET", 20000))
+MAX_BATCH = int(os.environ.get("CAP_MAX_BATCH", 48))
 MAX_PROMPT = 6000
 
 
