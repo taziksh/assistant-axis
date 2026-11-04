@@ -19,7 +19,7 @@ import pandas as pd
 SLOT = "[INSERT PROMPT HERE]"
 
 
-def load_sets(dl, n_itw):
+def load_sets(dl, n_itw, itw_templates=1):
     hb = list(
         csv.DictReader(
             open(os.path.join(dl, "harmbench_behaviors_text_all.csv"))
@@ -32,27 +32,29 @@ def load_sets(dl, n_itw):
         )
     )
     q = pd.read_csv(os.path.join(dl, "fq", "forbidden_question_set.csv"))
-    itw = (
-        []
-    # n_itw per content-policy category: distinct questions, each with a random
-    # jailbreak prompt.
-    )
+    # n_itw per content-policy category: distinct questions, each with
+    # itw_templates random jailbreak prompts (ids gain a -t suffix when > 1).
+    itw = []
     for cat, qs in q.groupby("content_policy_name", sort=True):
         for qq in qs.sample(n=min(n_itw, len(qs)), random_state=0).itertuples():
-            p = j.prompt.iloc[rng.randrange(len(j))]
-            text = (
-                p.replace(SLOT, qq.question)
-                if SLOT in p
-                else f"{p}\n\n{qq.question}"
-            )
-            itw.append({
-                "id": f"itw{qq.Index}",
-                "turns": [text],
-                "system": None,
-                "behavior": qq.question,
-                "context": None,
-                "category": cat,
-            })
+            for t in range(itw_templates):
+                p = j.prompt.iloc[rng.randrange(len(j))]
+                text = (
+                    p.replace(SLOT, qq.question)
+                    if SLOT in p
+                    else f"{p}\n\n{qq.question}"
+                )
+                itw.append({
+                    "id": (
+                        f"itw{qq.Index}"
+                        + (f"-{t}" if itw_templates > 1 else "")
+                    ),
+                    "turns": [text],
+                    "system": None,
+                    "behavior": qq.question,
+                    "context": None,
+                    "category": cat,
+                })
     m = pd.read_csv(os.path.join(dl, "mhj", "harmbench_behaviors.csv"))
     mhj = []
     for i, r in m.iterrows():

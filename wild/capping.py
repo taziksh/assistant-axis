@@ -143,6 +143,12 @@ def main():
         help="DAN pairs per forbidden-question category",
     )
     ap.add_argument(
+        "--itw-templates",
+        type=int,
+        default=1,
+        help="jailbreak prompts per DAN question (more attacks per question)",
+    )
+    ap.add_argument(
         "--only", default=None, help="e.g. mhj:none to run one set/condition"
     )
     ap.add_argument(
@@ -175,7 +181,7 @@ def main():
             ]
         }
     else:
-        sets = load_sets(args.dl_dir, args.itw)
+        sets = load_sets(args.dl_dir, args.itw, args.itw_templates)
     pm = ProbingModel(MODEL)
     cfg = load_capping_config(
         hf_hub_download(AXIS_REPO, CAPPING_FILE, repo_type="dataset")

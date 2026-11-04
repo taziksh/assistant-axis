@@ -257,6 +257,12 @@ async def main():
     ap.add_argument(
         "--itw", type=int, default=25, help="must match capping.py --itw"
     )
+    ap.add_argument(
+        "--itw-templates",
+        type=int,
+        default=1,
+        help="must match capping.py --itw-templates",
+    )
     args = ap.parse_args()
     # Jailbreak sets are loaded only for rows that don't carry their own
     # "request".
@@ -285,7 +291,9 @@ async def main():
         if turns is None and any("request" not in r for r in rows):
             turns = {
                 it["id"]: it["turns"]
-                for items in load_sets(args.dl, args.itw).values()
+                for items in load_sets(
+                    args.dl, args.itw, args.itw_templates
+                ).values()
                 for it in items
             }
         # Rows with "request" (harm after real openings, Shah-style set) carry
