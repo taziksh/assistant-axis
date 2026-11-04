@@ -125,8 +125,8 @@ def table1c(res):
         " conversations vs the paper's Fig. 25.\n"
     )
     print(
-        "| Domain (simulated user) | Ours (turn 1) | Paper (turn 1) | Ours (last"
-        " 3 turns) | Paper (last 3 turns) |"
+        "| Domain (simulated user) | Ours (turn 1) | Paper (turn 1) | Ours"
+        " (last 3 turns) | Paper (last 3 turns) |"
     )
     print("|---|---|---|---|---|")
     paper = paper_fig25()
@@ -234,7 +234,7 @@ def table3(res):
 
 
 def capability_scores(res):
-    """Benchmark -> (metric, uncapped, capped), or {} without results."""
+    """Benchmark -> (metric, uncapped, capped, SEs), or {} without results."""
     path = os.path.join(res, "cap", "capability.json")
     if not os.path.exists(path):
         return {}
@@ -244,6 +244,7 @@ def capability_scores(res):
     for t, v in stage["none"].items():
         metric = stage.get("none_metric", {}).get(t, "?")
         scores = [v, stage["capped"][t]]
+        ses = [stage["none_stderr"][t], stage["capped_stderr"][t]]
         if t == "gsm8k" and "strict" in metric:
             # The saved score is strict-match; the per-question file holds both
             # filters (2 rows per question), so flexible = all - strict.
@@ -256,8 +257,9 @@ def capability_scores(res):
                 n = len({r["doc_id"] for r in rows})
                 total = sum(r["exact_match"] for r in rows)
                 scores[c] = (total - stage[cond]["gsm8k"] * n) / n
+                ses[c] = math.sqrt(scores[c] * (1 - scores[c]) / n)
             metric = "exact_match,flexible-extract"
-        out[t] = (metric, *scores)
+        out[t] = (metric, *scores, ses)
     return out
 
 
@@ -268,7 +270,7 @@ def table4(res):
     print("Table 4. Capability cost of the cap (stage 1 sizes).\n")
     print("| Benchmark | Metric | Uncapped | Capped |")
     print("|---|---|---|---|")
-    for t, (metric, a, b) in scores.items():
+    for t, (metric, a, b, _) in scores.items():
         print(f"| {t} | {metric} | {a:.3f} | {b:.3f} |")
     print()
 
