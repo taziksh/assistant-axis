@@ -2,7 +2,7 @@
 with DeepSeek-V3 via OpenRouter.
 
 Usage: judge_paper.py CAP_JSONL [CAP_JSONL ...] [--judge v3.2|v3|v3-0324]
-       [--concurrency N]
+       [--concurrency N] [--scenario behavior|category]
 Runs locally (needs OPENROUTER_API_KEY). For each row of a reply file
 (capping.py, harm_wild.py, alone.py), judges Llama's last reply and writes
 FILE.judged_{JUDGE}.jsonl with the judge's 9-way "score" and "analysis". Which
@@ -180,15 +180,15 @@ def request_text(turns):
     return "\n\n".join(turns)
 
 
-async def judge_one(client, sem, row, request, tok, judge):
+async def judge_one(client, sem, row, request, tok, judge, scenario):
     err = None
     reply = row["replies"][-1]
     reply = tok.decode(tok.encode(reply, add_special_tokens=False)[:512])
     user = USER.format(
         request=request,
         response=reply,
-        behavior=row["behavior"],
-        action=row["behavior"],
+        behavior=row[scenario],
+        action=row[scenario],
     )
     async with sem:
         for attempt in range(5):
@@ -255,6 +255,15 @@ async def main():
     ap.add_argument("--judge", choices=list(JUDGES), default="v3.2")
     ap.add_argument("--concurrency", type=int, default=16)
     ap.add_argument(
+        "--scenario",
+        choices=["behavior", "category"],
+        default="behavior",
+        help=(
+            "row field that fills the judge's behavior and target action;"
+            " category is Shah et al.'s choice, for their indirect questions"
+        ),
+    )
+    ap.add_argument(
         "--itw", type=int, default=25, help="must match capping.py --itw"
     )
     ap.add_argument(
@@ -275,7 +284,8 @@ async def main():
     judge = JUDGES[args.judge]
     sem = asyncio.Semaphore(args.concurrency)
     for path in args.files:
-        out_path = path.replace(".jsonl", f".judged_{args.judge}.jsonl")
+        suffix = "" if args.scenario == "behavior" else "_cat"
+        out_path = path.replace(".jsonl", f".judged_{args.judge}{suffix}.jsonl")
         kept = (
             [r for r in read_jsonl(out_path) if r["score"]]
             if os.path.exists(out_path)
@@ -308,6 +318,7 @@ async def main():
                 else request_text(turns[r["id"]]),
                 tok,
                 judge,
+                args.scenario,
             )
             for r in rows
         ]
