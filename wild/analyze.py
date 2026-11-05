@@ -490,7 +490,7 @@ def capping(run, res, out, judge="v3.2"):
             out.append("")
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("run_dir")
     ap.add_argument(
@@ -503,8 +503,22 @@ def main():
         action="store_true",
         help="split drift by the judge's domain labels (needs approval)",
     )
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
     run = args.run_dir
+    manifest_path = os.path.join(run, "drift.manifest.json")
+    if os.path.exists(manifest_path) and os.path.exists(os.path.join(run, "projections.jsonl")):
+        with open(manifest_path) as stream:
+            manifest = json.load(stream)
+        if manifest.get("schema_version", 1) >= 2:
+            from wild.drift.analysis import main as analyze_replies
+            from wild.drift.state import read_record
+
+            projection_state = read_record(os.path.join(run, "projections.state.json"))
+            if projection_state.get("status") == "pending":
+                print("Drift analysis deferred until projection extraction finishes.")
+                return
+            analyze_replies([run])
+            return
     sel_path = os.path.join(run, "selected.jsonl")
     convs = read_jsonl(sel_path) if os.path.exists(sel_path) else []
     res, out = {}, [

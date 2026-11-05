@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import build
 from wild.drift import measurement as drift_activations
+from wild.drift import analysis as drift_analysis
 from wild.drift import generation as generate
 import judge
 from wild.drift import state as run_state
@@ -106,3 +107,5 @@ def test_four_domain_selection_handoff_and_verified_reuse(tmp_path, monkeypatch)
     judge.run(args, model_loader=forbidden, revision_resolver=forbidden)
     generate.main([str(output)])
     drift_activations.main([str(output)])
+    drift_analysis.main([str(output)])
+    assert (output / "analysis" / "projection_by_turn.png").is_file()
