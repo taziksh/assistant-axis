@@ -203,8 +203,7 @@ def fig_harm(res, out, name, stems, label_roles):
     ax.text(
         1,
         0.97,
-        f"Spearman ρ = {rho:+.2f} ({lo:+.2f}, {hi:+.2f})\n"
-        "paper: |r| = 0.39–0.52",
+        f"ρ = {rho:+.2f} ({lo:+.2f}, {hi:+.2f})".replace("-", "−"),
         transform=ax.transAxes,
         ha="right",
         va="top",
