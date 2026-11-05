@@ -3,10 +3,10 @@
 Usage: figures.py [RESULTS_DIR] [OUT_DIR]   (defaults: wild/results, wild/figures)
 Writes each figure as PNG (300 dpi) and SVG. Colors are sampled from the
 paper's figure images.
-- drift_real_chats (the paper's Fig. 25 style): Assistant Axis projection by
-  turn for our real WildChat chats (the same 76 chats at every turn, 95% CI
-  band), with the paper's coding conversations (mean over its three simulated
-  users, digitized into paper_fig25.json) in grey.
+- drift_real_chats (the paper's Fig. 25 data in its Fig. 8 style): Assistant
+  Axis projection by turn for our real WildChat chats (the same 76 chats at
+  every turn, 95% CI band), with the paper's coding conversations (mean over
+  its three simulated users, digitized into paper_fig25.json) in light grey.
 - harm_vs_drift_roles, harm_vs_drift_real (the paper's Fig. 8 style): one dot
   per opening, harmful rate over its 40 CategoricalHarmfulQA questions against
   the opening's projection. Rates move in steps of 1/40, so dots get a small
@@ -38,10 +38,6 @@ from tables import read
 from tables import verdicts
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-# Fig. 25.
-LINE_BLUE = "#4a6fa5"
-FRAME = "#1a1a1a"
-GREY = "#8c8c8c"
 # Figs. 8 and 10.
 PAGE = "#f0eee6"
 CARD = "#faf9f5"
@@ -106,44 +102,49 @@ def fig_drift(res, out):
     coding = [v for (d, _), v in paper_fig25().items() if d == "coding"]
     paper = [np.mean([c[t] for c in coding]) for t in range(15)]
     bands = [ci([c[k] for c in chats], np.mean) for k in turns]
-    fig, ax = plt.subplots(figsize=(4.6, 3.4))
+    fig = card_figure((7, 4.6))
+    ax = fig.add_axes([0.13, 0.17, 0.8, 0.74])
+    ax.set_facecolor("none")
     ax.plot(
         range(1, 16),
         paper,
         "-o",
-        color=GREY,
-        ms=3.5,
-        lw=1.3,
-        label="Paper: coding (simulated users)",
+        color=LIGHT_GREY,
+        ms=4,
+        lw=1.5,
+        label="Paper's coding chats (simulated users)",
     )
     ax.fill_between(
         turns,
         [b[0] for b in bands],
         [b[1] for b in bands],
-        color=LINE_BLUE,
-        alpha=0.18,
+        color=BLUE,
+        alpha=0.15,
         lw=0,
     )
     ax.plot(
         turns,
         [np.mean([c[k] for c in chats]) for k in turns],
         "-o",
-        color=LINE_BLUE,
-        ms=3.5,
-        lw=1.3,
-        label=f"Ours: real WildChat chats (n = {len(chats)})",
+        color=BLUE,
+        ms=4,
+        lw=1.5,
+        label=f"Real WildChat chats (n = {len(chats)})",
     )
-    ax.set_title("Real chats", loc="left", fontsize=13, pad=10)
-    ax.set_xlabel("Turn", labelpad=8)
-    ax.set_ylabel("Assistant Axis projection")
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    for side in ("left", "bottom"):
+        ax.spines[side].set_color(AXIS)
+        ax.spines[side].set_linewidth(1.5)
+    ax.tick_params(colors=AXIS, labelcolor=AXIS, length=5, width=1.2)
     ax.set_xticks([1, 5, 10, 15])
     ax.set_ylim(-0.75, 1.55)
     ax.set_yticks([-0.5, 0, 0.5, 1.0, 1.5])
-    for side in ax.spines.values():
-        side.set_color(FRAME)
-        side.set_linewidth(0.8)
-    ax.tick_params(direction="out", length=4, color=FRAME)
-    ax.legend(frameon=False, fontsize=8.5, loc="lower left")
+    ax.set_xlabel("Turn", color=AXIS, fontweight="bold", labelpad=8)
+    ax.set_ylabel(
+        "Assistant Axis Projection", color=AXIS, fontweight="bold", labelpad=10
+    )
+    ax.legend(frameon=False, fontsize=9.5, loc="lower left", labelcolor=LABEL)
     save(fig, out, "drift_real_chats")
 
 
