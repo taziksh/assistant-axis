@@ -13,6 +13,7 @@ import pytest
 WILD = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(WILD))
 import drift_activations as activations
+import drift_run
 import generate
 import run_state
 
@@ -330,12 +331,46 @@ def test_extraction_passes_same_pinned_revision_to_hf_loaders(monkeypatch):
 
 
 def test_cli_help_has_no_gpu_import_requirement():
-    for filename in ("generate.py", "drift_activations.py"):
+    for filename in ("generate.py", "drift_activations.py", "drift_run.py"):
         result = subprocess.run([sys.executable, str(WILD / filename), "--help"], capture_output=True, text=True)
         assert result.returncode == 0, result.stderr
 
 
+def test_runner_uses_separate_checked_processes(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(drift_run.subprocess, "run", lambda args, **kwargs: calls.append((args, kwargs)))
+    drift_run.main([str(tmp_path), "--model-revision", "b" * 40, "--axis-revision", "c" * 40])
+    assert len(calls) == 2
+    assert calls[0][0][0] == sys.executable
+    assert Path(calls[0][0][1]).name == "generate.py"
+    assert "--drift-only" in calls[0][0]
+    assert "b" * 40 in calls[0][0] and "c" * 40 in calls[0][0]
+    assert Path(calls[1][0][1]).name == "drift_activations.py"
+    assert all(kwargs == {"check": True} for _, kwargs in calls)
 
 
+def test_runner_stops_after_failed_generation(monkeypatch, tmp_path):
+    calls = []
+    def fail(args, **kwargs):
+        calls.append(args)
+        raise subprocess.CalledProcessError(1, args)
+    monkeypatch.setattr(drift_run.subprocess, "run", fail)
+    with pytest.raises(subprocess.CalledProcessError):
+        drift_run.main([str(tmp_path)])
+    assert len(calls) == 1
 
 
+@pytest.mark.parametrize("protected", [False, True])
+def test_legacy_runner_dispatches_correct_projector(tmp_path, protected):
+    if protected:
+        (tmp_path / "drift.manifest.json").write_text("{}")
+    # Execute the exact dispatch block with echo as the model command; the rest
+    # of run.sh (installation, downloads, pod lifecycle) must never run in tests.
+    script = (WILD / "run.sh").read_text()
+    dispatch = script.split("step activations\n", 1)[1].split("# step capability;", 1)[0]
+    result = subprocess.run(
+        ["bash", "-c", dispatch], capture_output=True, text=True, check=True,
+        env={**os.environ, "RUN": str(tmp_path), "PY": "echo"},
+    )
+    expected = "drift_activations.py" if protected else "activations.py"
+    assert result.stdout.strip() == f"{expected} {tmp_path}"

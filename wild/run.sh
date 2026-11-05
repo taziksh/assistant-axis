@@ -77,7 +77,12 @@ step analyze; $PY analyze.py "$RUN"
 step capping; $PY capping.py "$RUN" "$DL"
 step judge_harm; $PY judge_harm.py "$RUN"
 step analyze; $PY analyze.py "$RUN"
-step activations; $PY activations.py "$RUN"
+step activations
+if [ -f "$RUN/drift.manifest.json" ]; then
+  $PY drift_activations.py "$RUN"
+else
+  $PY activations.py "$RUN"
+fi
 # step capability; $PY capability.py "$RUN"  # On hold until the benchmark set is approved.
 step analyze; $PY analyze.py "$RUN"
 step done
