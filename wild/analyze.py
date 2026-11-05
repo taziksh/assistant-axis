@@ -42,9 +42,12 @@ def drift(run, convs, res, out, use_domains):
     """use_domains=False pools all conversations: the domain labels come from an
     unapproved judge.
     """
+    records = read_jsonl(os.path.join(run, "projections.jsonl"))
+    if any("sample_index" in row for row in records):
+        raise ValueError("use drift_analysis.py to average repeated replies before comparing conversations")
     proj = {
         (r["hash"], r["k"]): r
-        for r in read_jsonl(os.path.join(run, "projections.jsonl"))
+        for r in records
         if r["proj"] is not None
     }
     sel = read_jsonl(os.path.join(run, "selected.jsonl"))

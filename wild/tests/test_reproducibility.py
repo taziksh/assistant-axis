@@ -12,10 +12,10 @@ import pytest
 
 WILD = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(WILD))
-import drift_activations as activations
-import drift_run
-import generate
-import run_state
+sys.path.insert(0, str(WILD.parent))
+from wild.drift import measurement as activations
+from wild.drift import generation as generate
+from wild.drift import state as run_state
 
 
 @pytest.fixture
@@ -43,17 +43,23 @@ def experiment(tmp_path, monkeypatch):
     monkeypatch.setattr(run_state, "resolve_artifacts", lambda *args: copy.deepcopy(artifacts))
     monkeypatch.setattr(run_state, "environment", lambda stage: {"test-runtime": "1"})
     monkeypatch.setattr(generate, "load_drift_tokenizer", lambda artifact: object())
-    monkeypatch.setattr(generate, "prompt_ids", lambda tok, messages: [1] * len(messages))
+    monkeypatch.setattr(generate, "prompt_ids", lambda tok, messages: list(json.dumps(messages).encode()))
+    monkeypatch.setattr(generate, "load_token_exclusions", lambda *args: [0])
     monkeypatch.setattr(generate, "drift_runtime", lambda: {"tensor_parallel_size": 1, "gpus": ["fake"]})
     monkeypatch.setattr(generate, "load_drift_model", lambda *args: object())
-    monkeypatch.setattr(generate, "generate", lambda llm, prompts, max_tokens: [[("new reply", "stop")] for _ in prompts])
+    monkeypatch.setattr(generate, "sample_batch", lambda llm, jobs, config: completions(jobs))
     monkeypatch.setattr(activations, "projection_runtime", lambda: {"device_map": "auto", "gpus": ["fake"]})
     monkeypatch.setattr(activations, "load_projector", lambda run: lambda messages: (1.25, 0.1))
     return tmp_path, records
 
 
+def completions(jobs, text="new reply", token_ids=None):
+    return [{"prompt_token_ids": job["prompt_token_ids"], "response_token_ids": [70, 71, 0] if token_ids is None else token_ids,
+             "reply": text, "finish": "stop", "stop_reason": 0} for job in jobs]
+
+
 def run_both(path):
-    generate.main([str(path), "--drift-only"])
+    generate.main([str(path)])
     activations.main([str(path)])
 
 
@@ -64,8 +70,8 @@ def forbid(*args, **kwargs):
 def test_cli_runs_and_reuses_cache_without_loading(experiment, monkeypatch):
     path, records = experiment
     run_both(path)
-    assert len(run_state.jsonl((path / "drift.jsonl").read_bytes())) == 6
-    assert len(run_state.jsonl((path / "projections.jsonl").read_bytes())) == 6
+    assert len(run_state.jsonl((path / "drift.jsonl").read_bytes())) == 18
+    assert len(run_state.jsonl((path / "projections.jsonl").read_bytes())) == 18
     monkeypatch.setattr(run_state, "resolve_artifacts", forbid)
     monkeypatch.setattr(generate, "load_drift_tokenizer", forbid)
     monkeypatch.setattr(generate, "load_drift_model", forbid)
@@ -74,8 +80,10 @@ def test_cli_runs_and_reuses_cache_without_loading(experiment, monkeypatch):
 
 
 def test_drift_only_cli_does_not_require_harmbench(experiment):
+    from wild import generate as legacy_generate
+
     path, _ = experiment
-    generate.main([str(path), "--drift-only"])
+    legacy_generate.main([str(path), "--drift-only"])
     assert (path / "drift.jsonl").exists()
 
 
@@ -93,7 +101,7 @@ def test_changed_experiment_rejects_cache(experiment, monkeypatch, change):
         p.write_bytes(run_state.encoded(value))
     elif change == "settings":
         original = run_state.settings
-        monkeypatch.setattr(run_state, "settings", lambda horizon: {**original(horizon), "temperature": 0.1})
+        monkeypatch.setattr(run_state, "settings", lambda horizon, samples_per_turn=3: {**original(horizon, samples_per_turn), "temperature": 0.1})
     elif change == "code":
         monkeypatch.setattr(run_state, "code_fingerprints", lambda stage: {"changed": "code"})
     elif change == "packages":
@@ -128,24 +136,25 @@ def test_interrupted_generation_never_publishes_partial_results(experiment, monk
     path, _ = experiment
     def fail(*args):
         raise RuntimeError("generation interrupted")
-    monkeypatch.setattr(generate, "generate", fail)
+    monkeypatch.setattr(generate, "sample_batch", fail)
     with pytest.raises(RuntimeError):
         generate.run_drift(path)
     assert not (path / "drift.jsonl").exists()
     assert run_state.read_record(path / "drift.state.json")["status"] == "pending"
-    monkeypatch.setattr(generate, "generate", lambda llm, prompts, n: [[("retry", "stop")] for _ in prompts])
+    monkeypatch.setattr(generate, "sample_batch", lambda llm, jobs, config: completions(jobs, "retry"))
     generate.run_drift(path)
-    assert len(run_state.jsonl((path / "drift.jsonl").read_bytes())) == 6
+    assert len(run_state.jsonl((path / "drift.jsonl").read_bytes())) == 18
 
 
-def test_file_without_completion_is_not_treated_as_done(experiment):
+def test_complete_responses_without_completion_record_are_reused(experiment, monkeypatch):
     path, _ = experiment
     generate.run_drift(path)
     state = run_state.read_record(path / "drift.state.json")
     state["status"] = "pending"
     run_state.save_record(path / "drift.state.json", state)
-    with pytest.raises(ValueError, match="publication was interrupted"):
-        generate.run_drift(path)
+    monkeypatch.setattr(generate, "load_drift_model", forbid)
+    generate.run_drift(path)
+    assert run_state.read_record(path / "drift.state.json")["status"] == "complete"
 
 
 def test_output_corruption_is_detected(experiment):
@@ -162,9 +171,9 @@ def test_turn_exclusions_are_explicit_and_horizon_comes_from_selection(experimen
     monkeypatch.setattr(generate, "prompt_ids", lambda tok, messages: [0] * (20000 if len(messages) >= 3 else 1))
     generate.run_drift(path)
     state = run_state.read_record(path / "drift.state.json")
-    assert state["plan"]["generated_keys"] == [["a", 1], ["b", 1]]
+    assert state["plan"]["generated_keys"] == [[cid, 1, i] for cid in ("a", "b") for i in range(3)]
     assert [row["reason"] for row in state["plan"]["excluded"]] == [
-        "prompt_too_long", "after_overlength_prefix", "prompt_too_long", "after_overlength_prefix"
+        reason for _ in range(2) for reason in (["prompt_too_long"] * 3 + ["after_overlength_prefix"] * 3)
     ]
     generate.run_drift(path)
 
@@ -185,9 +194,12 @@ def test_projection_resumes_successes_and_keeps_original_history(experiment, mon
     calls.clear()
     monkeypatch.setattr(activations, "load_projector", lambda run: lambda messages: (calls.append(messages) or (2.0, 0.0)))
     activations.run_projection(path)
-    assert len(calls) == 5
-    assert calls[0][1]["content"] == "a original 0"
-    assert calls[0][-1]["content"] == "new reply"
+    assert len(calls) == 17
+    turn_two = next(row for row in calls if row["hash"] == "a" and row["k"] == 2)
+    messages = json.loads(bytes(turn_two["prompt_token_ids"]))
+    assert messages[1]["content"] == "a original 0"
+    assert messages[-1]["content"] == "a user 1"
+    assert turn_two["reply"] == "new reply"
 
 
 @pytest.mark.parametrize("mutation", ["duplicate", "unknown", "mixed_run", "nonfinite", "invalid_fire", "null", "checksum"])
@@ -207,7 +219,7 @@ def test_invalid_projection_checkpoints_rejected(experiment, monkeypatch, mutati
         elif mutation == "mixed_run": row["run_id"] = "other"
         elif mutation == "nonfinite": row["proj"] = "NaN"
         elif mutation == "invalid_fire": row["fire_frac"] = 1.1
-        elif mutation == "null": row.update(proj=None, fire_frac=None, reason="empty_response")
+        elif mutation == "null": row.update(proj=None, fire_frac=None, reason="no_content_tokens")
         elif mutation == "checksum": row["proj"] = 10
         if mutation != "checksum":
             row["record_sha256"] = run_state.fingerprint({k: v for k, v in row.items() if k != "record_sha256"})
@@ -233,11 +245,11 @@ def test_interrupted_projection_line_fails_without_discarding_it(experiment):
 
 def test_empty_response_has_explicit_null_reason(experiment, monkeypatch):
     path, _ = experiment
-    monkeypatch.setattr(generate, "generate", lambda llm, prompts, n: [[("", "stop")] for _ in prompts])
+    monkeypatch.setattr(generate, "sample_batch", lambda llm, jobs, config: completions(jobs, "", [0]))
     monkeypatch.setattr(activations, "load_projector", forbid)
     run_both(path)
     rows = run_state.jsonl((path / "projections.jsonl").read_bytes())
-    assert all(row["proj"] is None and row["reason"] == "empty_response" for row in rows)
+    assert all(row["proj"] is None and row["reason"] == "no_content_tokens" for row in rows)
     run_both(path)
 
 
@@ -330,36 +342,6 @@ def test_extraction_passes_same_pinned_revision_to_hf_loaders(monkeypatch):
     assert paths == [artifacts["axis"], artifacts["capping"]]
 
 
-def test_cli_help_has_no_gpu_import_requirement():
-    for filename in ("generate.py", "drift_activations.py", "drift_run.py"):
-        result = subprocess.run([sys.executable, str(WILD / filename), "--help"], capture_output=True, text=True)
-        assert result.returncode == 0, result.stderr
-
-
-def test_runner_uses_separate_checked_processes(monkeypatch, tmp_path):
-    calls = []
-    monkeypatch.setattr(drift_run.subprocess, "run", lambda args, **kwargs: calls.append((args, kwargs)))
-    drift_run.main([str(tmp_path), "--model-revision", "b" * 40, "--axis-revision", "c" * 40])
-    assert len(calls) == 2
-    assert calls[0][0][0] == sys.executable
-    assert Path(calls[0][0][1]).name == "generate.py"
-    assert "--drift-only" in calls[0][0]
-    assert "b" * 40 in calls[0][0] and "c" * 40 in calls[0][0]
-    assert Path(calls[1][0][1]).name == "drift_activations.py"
-    assert all(kwargs == {"check": True} for _, kwargs in calls)
-
-
-def test_runner_stops_after_failed_generation(monkeypatch, tmp_path):
-    calls = []
-    def fail(args, **kwargs):
-        calls.append(args)
-        raise subprocess.CalledProcessError(1, args)
-    monkeypatch.setattr(drift_run.subprocess, "run", fail)
-    with pytest.raises(subprocess.CalledProcessError):
-        drift_run.main([str(tmp_path)])
-    assert len(calls) == 1
-
-
 @pytest.mark.parametrize("protected", [False, True])
 def test_legacy_runner_dispatches_correct_projector(tmp_path, protected):
     if protected:
@@ -374,3 +356,5 @@ def test_legacy_runner_dispatches_correct_projector(tmp_path, protected):
     )
     expected = "drift_activations.py" if protected else "activations.py"
     assert result.stdout.strip() == f"{expected} {tmp_path}"
+
+

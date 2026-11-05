@@ -7,11 +7,12 @@ import sys
 import types
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import build
-import drift_activations
-import generate
+from wild.drift import measurement as drift_activations
+from wild.drift import generation as generate
 import judge
-import run_state
+from wild.drift import state as run_state
 import selection
 
 
@@ -77,17 +78,24 @@ def test_four_domain_selection_handoff_and_verified_reuse(tmp_path, monkeypatch)
     monkeypatch.setattr(run_state, "resolve_artifacts", lambda *a: artifacts)
     monkeypatch.setattr(run_state, "environment", lambda stage: {"fixture": "1"})
     monkeypatch.setattr(generate, "load_drift_tokenizer", lambda *a: Tokenizer())
+    monkeypatch.setattr(generate, "load_token_exclusions", lambda *a: [0])
     monkeypatch.setattr(generate, "drift_runtime", lambda: {"tensor_parallel_size": 1, "gpus": ["fixture"]})
     monkeypatch.setattr(generate, "load_drift_model", lambda *a: object())
-    monkeypatch.setattr(generate, "generate", lambda model, prompts, n: [[("Synthetic reply", "stop")] for p in prompts])
+    monkeypatch.setattr(generate, "sample_batch", lambda model, jobs, config: [
+        {"prompt_token_ids": job["prompt_token_ids"], "response_token_ids": [7, 8, 0],
+         "reply": "Synthetic reply", "finish": "stop", "stop_reason": 0}
+        for job in jobs
+    ])
     monkeypatch.setattr(drift_activations, "projection_runtime", lambda: {"gpus": ["fixture"]})
-    monkeypatch.setattr(drift_activations, "load_projector", lambda *a: lambda messages: (float(len(messages)), 0.0))
-    generate.main([str(output), "--drift-only"])
+    monkeypatch.setattr(drift_activations, "load_projector", lambda *a: lambda row: (float(row["k"] + row["sample_index"]), 0.0))
+    generate.main([str(output)])
     drift_activations.main([str(output)])
     projections = selection.read_jsonl(output / "projections.jsonl")
-    assert {(row["hash"], row["k"]) for row in projections} == {
-        (domain, turn) for domain in selection.DOMAINS for turn in (1, 2, 3)
+    assert {(row["hash"], row["k"], row["sample_index"]) for row in projections} == {
+        (domain, turn, sample) for domain in selection.DOMAINS for turn in (1, 2, 3) for sample in range(3)
     }
+    assert len(projections) == 36
+    assert all(row["response_token_count"] == 2 for row in projections)
 
     def forbidden(*args, **kwargs):
         raise AssertionError("verified cache attempted model loading or Hub access")
@@ -96,5 +104,5 @@ def test_four_domain_selection_handoff_and_verified_reuse(tmp_path, monkeypatch)
     monkeypatch.setattr(drift_activations, "load_projector", forbidden)
     monkeypatch.setattr(run_state, "resolve_artifacts", forbidden)
     judge.run(args, model_loader=forbidden, revision_resolver=forbidden)
-    generate.main([str(output), "--drift-only"])
+    generate.main([str(output)])
     drift_activations.main([str(output)])
