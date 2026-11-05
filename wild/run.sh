@@ -69,7 +69,10 @@ if [ "${JAILBREAK_ONLY:-0}" = 1 ]; then
 fi
 [ -f data/convs.jsonl ] || { step build; $PY build.py data/convs.jsonl; }
 [ -f "$RUN/selected.jsonl" ] || { step judge; $PY judge.py data/convs.jsonl "$RUN" --per-domain "$PER_DOMAIN"; }
-[ -f "$RUN/drift.jsonl" ] || { step generate; $PY generate.py "$RUN" "$DL/harmbench_behaviors_text_all.csv" --drift-only; }
+# Protected outputs may be partial checkpoints; enter their validator on reruns.
+if [ -f "$RUN/drift.manifest.json" ] || [ ! -f "$RUN/drift.jsonl" ]; then
+  step generate; $PY generate.py "$RUN" "$DL/harmbench_behaviors_text_all.csv" --drift-only
+fi
 # Harm on real multi-turn jailbreaks first: uncapped MHJ replies, their projections, the judge.
 step capping_mhj; $PY capping.py "$RUN" "$DL" --only mhj:none
 step judge_harm; $PY judge_harm.py "$RUN"

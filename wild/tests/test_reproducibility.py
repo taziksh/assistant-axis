@@ -14,6 +14,7 @@ WILD = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(WILD))
 sys.path.insert(0, str(WILD.parent))
 from wild.drift import measurement as activations
+from wild.drift import runner as drift_run
 from wild.drift import generation as generate
 from wild.drift import state as run_state
 
@@ -342,6 +343,37 @@ def test_extraction_passes_same_pinned_revision_to_hf_loaders(monkeypatch):
     assert paths == [artifacts["axis"], artifacts["capping"]]
 
 
+def test_cli_help_has_no_gpu_import_requirement(tmp_path):
+    for filename in ("generate.py", "drift_activations.py", "drift_run.py", "drift_analysis.py"):
+        result = subprocess.run([sys.executable, str(WILD / filename), "--help"], cwd=tmp_path, capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+
+
+def test_runner_uses_separate_checked_processes(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(drift_run.subprocess, "run", lambda args, **kwargs: calls.append((args, kwargs)))
+    drift_run.main([str(tmp_path), "--model-revision", "b" * 40, "--axis-revision", "c" * 40])
+    assert len(calls) == 3
+    assert calls[0][0][0] == sys.executable
+    assert Path(calls[0][0][1]).name == "generate.py"
+    assert "--drift-only" in calls[0][0]
+    assert "b" * 40 in calls[0][0] and "c" * 40 in calls[0][0]
+    assert Path(calls[1][0][1]).name == "drift_activations.py"
+    assert Path(calls[2][0][1]).name == "drift_analysis.py"
+    assert all(kwargs == {"check": True} for _, kwargs in calls)
+
+
+def test_runner_stops_after_failed_generation(monkeypatch, tmp_path):
+    calls = []
+    def fail(args, **kwargs):
+        calls.append(args)
+        raise subprocess.CalledProcessError(1, args)
+    monkeypatch.setattr(drift_run.subprocess, "run", fail)
+    with pytest.raises(subprocess.CalledProcessError):
+        drift_run.main([str(tmp_path)])
+    assert len(calls) == 1
+
+
 @pytest.mark.parametrize("protected", [False, True])
 def test_legacy_runner_dispatches_correct_projector(tmp_path, protected):
     if protected:
@@ -358,3 +390,17 @@ def test_legacy_runner_dispatches_correct_projector(tmp_path, protected):
     assert result.stdout.strip() == f"{expected} {tmp_path}"
 
 
+@pytest.mark.parametrize("protected,has_output,should_generate", [(True, True, True), (True, False, True), (False, False, True), (False, True, False)])
+def test_combined_runner_reenters_protected_generation(tmp_path, protected, has_output, should_generate):
+    if protected:
+        (tmp_path / "drift.manifest.json").write_text("{}")
+    if has_output:
+        (tmp_path / "drift.jsonl").write_text("partial or completed output")
+    script = (WILD / "run.sh").read_text()
+    block = script.split('# Protected outputs may be partial checkpoints;', 1)[1].split('# Harm on real multi-turn', 1)[0]
+    block = block[block.index('if ['):]
+    result = subprocess.run(
+        ["bash", "-c", 'step() { :; }\n' + block], capture_output=True, text=True, check=True,
+        env={**os.environ, "RUN": str(tmp_path), "PY": "echo", "DL": "/unused"},
+    )
+    assert ("generate.py" in result.stdout) is should_generate
