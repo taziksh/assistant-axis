@@ -9,10 +9,10 @@ import types
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import build
-import judge
-import selection
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from wild.selection import build as build
+from wild.selection import judge as judge
+from wild.selection import helpers as selection
 
 SHA = "a" * 40
 

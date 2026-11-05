@@ -7,7 +7,6 @@ import types
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from wild.drift import measurement as drift_activations
 from wild.drift import generation as generate

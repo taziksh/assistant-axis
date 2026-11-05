@@ -126,8 +126,8 @@ def selection(run_dir):
 
 
 def settings(horizon, samples_per_turn=3):
-    from wild.wcommon import CAPPING_EXPERIMENT, LAYER, MAX_MODEL_LEN, MAX_NEW_TOKENS
-    from wild.wcommon import MAX_PROMPT_TOKENS, MODEL, TEMPERATURE, TOP_P
+    from wild.common.settings import CAPPING_EXPERIMENT, LAYER, MAX_MODEL_LEN, MAX_NEW_TOKENS
+    from wild.common.settings import MAX_PROMPT_TOKENS, MODEL, TEMPERATURE, TOP_P
 
     if type(samples_per_turn) is not int or samples_per_turn < 1:
         raise ValueError("samples_per_turn must be a positive integer")
@@ -146,7 +146,7 @@ def settings(horizon, samples_per_turn=3):
 
 def resolve_artifacts(model_revision=None, axis_revision=None):
     from huggingface_hub import HfApi, hf_hub_download
-    from wild.wcommon import AXIS_FILE, AXIS_REPO, CAPPING_FILE, MODEL
+    from wild.common.settings import AXIS_FILE, AXIS_REPO, CAPPING_FILE, MODEL
 
     api = HfApi()
     model_sha = api.model_info(MODEL, revision=model_revision or "main").sha
@@ -229,7 +229,7 @@ def environment(stage):
 
 
 def code_fingerprints(stage):
-    paths = ["wild/drift/state.py", "wild/wcommon.py", "sanity_check/scripts/common.py"]
+    paths = ["wild/drift/state.py", "wild/common/settings.py", "wild/common/paths.py", "sanity_check/scripts/common.py"]
     paths += ["wild/drift/generation.py"] if stage == "drift" else [
         "wild/drift/measurement.py", "assistant_axis/axis.py", "assistant_axis/steering.py",
         "assistant_axis/internals/model.py", "assistant_axis/internals/conversation.py",

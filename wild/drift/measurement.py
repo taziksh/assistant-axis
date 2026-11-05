@@ -1,6 +1,6 @@
 """Project frozen drift replies, validating provenance before every resume.
 
-Usage: drift_activations.py RUN_DIR
+Usage: python -m wild.drift.measurement RUN_DIR
 Writes layer-40 mean reply projections and uncapped cap-firing fractions.
 Requires a completed protected run from generate.py --drift-only.
 """

@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 from . import state as run_state
-from wild.wcommon import history, prompt_ids
+from wild.common.settings import history, prompt_ids
 
 
 def load_drift_tokenizer(artifact):

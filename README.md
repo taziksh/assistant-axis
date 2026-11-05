@@ -59,6 +59,10 @@ Interactive notebooks for analysis and experimentation. See [`notebooks/README.m
 - **Steering and activation capping** on arbitrary prompts
 - **Transcript projection** to visualize persona trajectories
 
+## Real-chat experiments
+
+The [`wild/` experiments](wild/README.md) evaluate the published Assistant Axis on real conversations. Start with the [four-category WildChat drift pilot](wild/docs/drift.md) for selection, repeated replies, projections, and plots.
+
 ## Computing the Axis
 
 To compute the axis for a new model, run the 5-step pipeline:

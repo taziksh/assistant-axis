@@ -6,15 +6,14 @@ from pathlib import Path
 import sys
 import types
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-import build
+from wild.selection import build as build
 from wild.drift import measurement as drift_activations
 from wild.drift import analysis as drift_analysis
 from wild.drift import generation as generate
-import judge
+from wild.selection import judge as judge
 from wild.drift import state as run_state
-import selection
+from wild.selection import helpers as selection
 
 
 def test_four_domain_selection_handoff_and_verified_reuse(tmp_path, monkeypatch):

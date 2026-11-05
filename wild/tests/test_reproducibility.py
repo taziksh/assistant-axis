@@ -11,7 +11,6 @@ import types
 import pytest
 
 WILD = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(WILD))
 sys.path.insert(0, str(WILD.parent))
 from wild.drift import measurement as activations
 from wild.drift import runner as drift_run
@@ -81,7 +80,7 @@ def test_cli_runs_and_reuses_cache_without_loading(experiment, monkeypatch):
 
 
 def test_drift_only_cli_does_not_require_harmbench(experiment):
-    from wild import generate as legacy_generate
+    from wild.legacy import generation as legacy_generate
 
     path, _ = experiment
     legacy_generate.main([str(path), "--drift-only"])
@@ -344,8 +343,9 @@ def test_extraction_passes_same_pinned_revision_to_hf_loaders(monkeypatch):
 
 
 def test_cli_help_has_no_gpu_import_requirement(tmp_path):
-    for filename in ("generate.py", "drift_activations.py", "drift_run.py", "drift_analysis.py"):
-        result = subprocess.run([sys.executable, str(WILD / filename), "--help"], cwd=tmp_path, capture_output=True, text=True)
+    for module in ("wild.legacy.generation", "wild.drift.measurement", "wild.drift", "wild.drift.analysis"):
+        result = subprocess.run([sys.executable, "-m", module, "--help"], cwd=tmp_path, capture_output=True, text=True,
+                                env={**os.environ, "PYTHONPATH": str(WILD.parent)})
         assert result.returncode == 0, result.stderr
 
 
@@ -355,12 +355,11 @@ def test_runner_uses_separate_checked_processes(monkeypatch, tmp_path):
     drift_run.main([str(tmp_path), "--model-revision", "b" * 40, "--axis-revision", "c" * 40])
     assert len(calls) == 3
     assert calls[0][0][0] == sys.executable
-    assert Path(calls[0][0][1]).name == "generate.py"
-    assert "--drift-only" in calls[0][0]
+    assert calls[0][0][1:3] == ["-m", "wild.drift.generation"]
     assert "b" * 40 in calls[0][0] and "c" * 40 in calls[0][0]
-    assert Path(calls[1][0][1]).name == "drift_activations.py"
-    assert Path(calls[2][0][1]).name == "drift_analysis.py"
-    assert all(kwargs == {"check": True} for _, kwargs in calls)
+    assert calls[1][0][1:3] == ["-m", "wild.drift.measurement"]
+    assert calls[2][0][1:3] == ["-m", "wild.drift.analysis"]
+    assert all(kwargs == {"check": True, "cwd": WILD.parent} for _, kwargs in calls)
 
 
 def test_runner_stops_after_failed_generation(monkeypatch, tmp_path):
@@ -380,14 +379,14 @@ def test_legacy_runner_dispatches_correct_projector(tmp_path, protected):
         (tmp_path / "drift.manifest.json").write_text("{}")
     # Execute the exact dispatch block with echo as the model command; the rest
     # of run.sh (installation, downloads, pod lifecycle) must never run in tests.
-    script = (WILD / "run.sh").read_text()
+    script = (WILD / "scripts" / "run.sh").read_text()
     dispatch = script.split("step activations\n", 1)[1].split("# step capability;", 1)[0]
     result = subprocess.run(
         ["bash", "-c", dispatch], capture_output=True, text=True, check=True,
         env={**os.environ, "RUN": str(tmp_path), "PY": "echo"},
     )
-    expected = "drift_activations.py" if protected else "activations.py"
-    assert result.stdout.strip() == f"{expected} {tmp_path}"
+    expected = "wild.drift.measurement" if protected else "wild.legacy.measurement"
+    assert result.stdout.strip() == f"-m {expected} {tmp_path}"
 
 
 @pytest.mark.parametrize("protected,has_output,should_generate", [(True, True, True), (True, False, True), (False, False, True), (False, True, False)])
@@ -396,11 +395,11 @@ def test_combined_runner_reenters_protected_generation(tmp_path, protected, has_
         (tmp_path / "drift.manifest.json").write_text("{}")
     if has_output:
         (tmp_path / "drift.jsonl").write_text("partial or completed output")
-    script = (WILD / "run.sh").read_text()
+    script = (WILD / "scripts" / "run.sh").read_text()
     block = script.split('# Protected outputs may be partial checkpoints;', 1)[1].split('# Harm on real multi-turn', 1)[0]
     block = block[block.index('if ['):]
     result = subprocess.run(
         ["bash", "-c", 'step() { :; }\n' + block], capture_output=True, text=True, check=True,
         env={**os.environ, "RUN": str(tmp_path), "PY": "echo", "DL": "/unused"},
     )
-    assert ("generate.py" in result.stdout) is should_generate
+    assert ("wild.legacy.generation" in result.stdout) is should_generate

@@ -6,9 +6,8 @@ import sys
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-import analyze
+from wild.reports import analyze as analyze
 from wild.drift import analysis as drift_analysis
 from wild.drift import state as run_state
 

@@ -5,6 +5,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+from wild.common.paths import REPO_ROOT
+
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
@@ -15,8 +17,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.samples_per_turn is not None and args.samples_per_turn < 1:
         parser.error("samples-per-turn must be positive")
-    here = Path(__file__).resolve().parents[1]
-    command = [sys.executable, str(here / "generate.py"), args.run_dir, "--drift-only"]
+    run_dir = str(Path(args.run_dir).resolve())
+    command = [sys.executable, "-m", "wild.drift.generation", run_dir]
     if args.model_revision:
         command += ["--model-revision", args.model_revision]
     if args.axis_revision:
@@ -24,9 +26,9 @@ def main(argv=None):
     if args.samples_per_turn is not None:
         command += ["--samples-per-turn", str(args.samples_per_turn)]
     # Separate processes release vLLM's workers and GPU memory before HF loads.
-    subprocess.run(command, check=True)
-    subprocess.run([sys.executable, str(here / "drift_activations.py"), args.run_dir], check=True)
-    subprocess.run([sys.executable, str(here / "drift_analysis.py"), args.run_dir], check=True)
+    subprocess.run(command, check=True, cwd=REPO_ROOT)
+    subprocess.run([sys.executable, "-m", "wild.drift.measurement", run_dir], check=True, cwd=REPO_ROOT)
+    subprocess.run([sys.executable, "-m", "wild.drift.analysis", run_dir], check=True, cwd=REPO_ROOT)
 
 
 if __name__ == "__main__":
