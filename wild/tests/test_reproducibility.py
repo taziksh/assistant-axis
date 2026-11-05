@@ -12,6 +12,7 @@ import pytest
 
 WILD = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(WILD))
+import drift_activations as activations
 import generate
 import run_state
 
@@ -45,15 +46,30 @@ def experiment(tmp_path, monkeypatch):
     monkeypatch.setattr(generate, "drift_runtime", lambda: {"tensor_parallel_size": 1, "gpus": ["fake"]})
     monkeypatch.setattr(generate, "load_drift_model", lambda *args: object())
     monkeypatch.setattr(generate, "generate", lambda llm, prompts, max_tokens: [[("new reply", "stop")] for _ in prompts])
+    monkeypatch.setattr(activations, "projection_runtime", lambda: {"device_map": "auto", "gpus": ["fake"]})
+    monkeypatch.setattr(activations, "load_projector", lambda run: lambda messages: (1.25, 0.1))
     return tmp_path, records
 
 
+def run_both(path):
+    generate.main([str(path), "--drift-only"])
+    activations.main([str(path)])
 
 
 def forbid(*args, **kwargs):
     raise AssertionError("cached run attempted a model load or network operation")
 
 
+def test_cli_runs_and_reuses_cache_without_loading(experiment, monkeypatch):
+    path, records = experiment
+    run_both(path)
+    assert len(run_state.jsonl((path / "drift.jsonl").read_bytes())) == 6
+    assert len(run_state.jsonl((path / "projections.jsonl").read_bytes())) == 6
+    monkeypatch.setattr(run_state, "resolve_artifacts", forbid)
+    monkeypatch.setattr(generate, "load_drift_tokenizer", forbid)
+    monkeypatch.setattr(generate, "load_drift_model", forbid)
+    monkeypatch.setattr(activations, "load_projector", forbid)
+    run_both(path)
 
 
 def test_drift_only_cli_does_not_require_harmbench(experiment):
@@ -152,12 +168,76 @@ def test_turn_exclusions_are_explicit_and_horizon_comes_from_selection(experimen
     generate.run_drift(path)
 
 
+def test_projection_resumes_successes_and_keeps_original_history(experiment, monkeypatch):
+    path, _ = experiment
+    generate.run_drift(path)
+    calls = []
+    def project(messages):
+        calls.append(messages)
+        if len(calls) == 2:
+            raise RuntimeError("interrupted")
+        return 2.0, 0.0
+    monkeypatch.setattr(activations, "load_projector", lambda run: project)
+    with pytest.raises(RuntimeError):
+        activations.run_projection(path)
+    assert len(run_state.jsonl((path / "projections.jsonl").read_bytes())) == 1
+    calls.clear()
+    monkeypatch.setattr(activations, "load_projector", lambda run: lambda messages: (calls.append(messages) or (2.0, 0.0)))
+    activations.run_projection(path)
+    assert len(calls) == 5
+    assert calls[0][1]["content"] == "a original 0"
+    assert calls[0][-1]["content"] == "new reply"
 
 
+@pytest.mark.parametrize("mutation", ["duplicate", "unknown", "mixed_run", "nonfinite", "invalid_fire", "null", "checksum"])
+def test_invalid_projection_checkpoints_rejected(experiment, monkeypatch, mutation):
+    path, _ = experiment
+    run_both(path)
+    p = path / "projections.jsonl"
+    rows = run_state.jsonl(p.read_bytes())
+    state = run_state.read_record(path / "projections.state.json")
+    state["status"] = "pending"
+    run_state.save_record(path / "projections.state.json", state)
+    if mutation == "duplicate":
+        rows.append(rows[0])
+    else:
+        row = rows[0]
+        if mutation == "unknown": row["hash"] = "unknown"
+        elif mutation == "mixed_run": row["run_id"] = "other"
+        elif mutation == "nonfinite": row["proj"] = "NaN"
+        elif mutation == "invalid_fire": row["fire_frac"] = 1.1
+        elif mutation == "null": row.update(proj=None, fire_frac=None, reason="empty_response")
+        elif mutation == "checksum": row["proj"] = 10
+        if mutation != "checksum":
+            row["record_sha256"] = run_state.fingerprint({k: v for k, v in row.items() if k != "record_sha256"})
+    p.write_bytes(b"".join(run_state.encoded(row) for row in rows))
+    monkeypatch.setattr(activations, "load_projector", forbid)
+    with pytest.raises(ValueError):
+        activations.run_projection(path)
 
 
+def test_interrupted_projection_line_fails_without_discarding_it(experiment):
+    path, _ = experiment
+    run_both(path)
+    state = run_state.read_record(path / "projections.state.json")
+    state["status"] = "pending"
+    run_state.save_record(path / "projections.state.json", state)
+    p = path / "projections.jsonl"
+    damaged = p.read_bytes() + b'{"hash":'
+    p.write_bytes(damaged)
+    with pytest.raises(ValueError, match="interrupted final write"):
+        activations.run_projection(path)
+    assert p.read_bytes() == damaged
 
 
+def test_empty_response_has_explicit_null_reason(experiment, monkeypatch):
+    path, _ = experiment
+    monkeypatch.setattr(generate, "generate", lambda llm, prompts, n: [[("", "stop")] for _ in prompts])
+    monkeypatch.setattr(activations, "load_projector", forbid)
+    run_both(path)
+    rows = run_state.jsonl((path / "projections.jsonl").read_bytes())
+    assert all(row["proj"] is None and row["reason"] == "empty_response" for row in rows)
+    run_both(path)
 
 
 def test_output_lock_rejects_concurrent_writers(tmp_path):
@@ -199,8 +279,60 @@ def test_vector_download_uses_pinned_revision_and_checks_bytes(tmp_path, monkeyp
         run_state.artifact_path(artifact)
 
 
+def test_extraction_passes_same_pinned_revision_to_hf_loaders(monkeypatch):
+    calls = []
+    class Vector:
+        def float(self): return self
+        def norm(self): return 1
+    vector = Vector()
+    functional = types.SimpleNamespace(normalize=lambda value, dim: value)
+    fake_torch = types.SimpleNamespace(
+        nn=types.SimpleNamespace(functional=functional), bfloat16="bf16",
+        isfinite=lambda value: types.SimpleNamespace(all=lambda: True),
+        backends=types.SimpleNamespace(cuda=types.SimpleNamespace(enable_cudnn_sdp=lambda enabled: None)),
+    )
+    tokenizer = types.SimpleNamespace(pad_token=None, eos_token="end")
+    model = types.SimpleNamespace(eval=lambda: None)
+    def tokenizer_load(*args, **kwargs):
+        calls.append(("tokenizer", args, kwargs))
+        return tokenizer
+    def model_load(*args, **kwargs):
+        calls.append(("model", args, kwargs))
+        return model
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setitem(sys.modules, "torch.nn", fake_torch.nn)
+    monkeypatch.setitem(sys.modules, "torch.nn.functional", functional)
+    monkeypatch.setitem(sys.modules, "transformers", types.SimpleNamespace(
+        AutoTokenizer=types.SimpleNamespace(from_pretrained=tokenizer_load),
+        AutoModelForCausalLM=types.SimpleNamespace(from_pretrained=model_load),
+    ))
+    cfg = {"vectors": {"cap": {"layer": 56, "vector": vector}}, "experiments": [
+        {"id": "cap", "interventions": [{"vector": "cap", "cap": 1.0}]}
+    ]}
+    monkeypatch.setitem(sys.modules, "assistant_axis", types.SimpleNamespace(
+        load_axis=lambda path: [vector] * 41, load_capping_config=lambda path: cfg,
+    ))
+    monkeypatch.setitem(sys.modules, "assistant_axis.internals", types.SimpleNamespace(
+        ConversationEncoder=lambda *args: object(), StopForward=RuntimeError,
+        ProbingModel=types.SimpleNamespace(from_existing=lambda *args, **kwargs: types.SimpleNamespace(get_layers=lambda: [])),
+    ))
+    paths = []
+    monkeypatch.setattr(run_state, "artifact_path", lambda value: paths.append(value) or value["filename"])
+    artifacts = {
+        "model": {"repo_id": "test/llama", "revision": "b" * 40},
+        "axis": {"filename": "axis.pt", "revision": "c" * 40},
+        "capping": {"filename": "cap.pt", "revision": "c" * 40},
+    }
+    activations.load_projector({"artifacts": artifacts, "config": {"layer": 40, "capping_experiment": "cap"}})
+    assert [call[0] for call in calls] == ["tokenizer", "model"]
+    assert all(call[2]["revision"] == "b" * 40 for call in calls)
+    assert paths == [artifacts["axis"], artifacts["capping"]]
 
 
+def test_cli_help_has_no_gpu_import_requirement():
+    for filename in ("generate.py", "drift_activations.py"):
+        result = subprocess.run([sys.executable, str(WILD / filename), "--help"], capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
 
 
 

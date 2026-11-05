@@ -293,5 +293,44 @@ def complete_stage(run_dir, stage, state, rows):
     save_record(Path(run_dir) / f"{stage}.state.json", state)
 
 
+def projection_rows(run_dir, run, state, generated):
+    path = Path(run_dir) / "projections.jsonl"
+    if not path.exists():
+        if state["status"] == "complete":
+            raise ValueError("completed projections are missing")
+        return []
+    raw = path.read_bytes()
+    if state["status"] == "complete" and checksum(raw) != state.get("output_sha256"):
+        raise ValueError("projection output checksum mismatch")
+    if raw and not raw.endswith(b"\n"):
+        # Fail closed. Never silently discard a possibly completed measurement.
+        raise ValueError("projections.jsonl has an interrupted final write; preserve it and use a new run directory")
+    rows = jsonl(raw)
+    source = {row_key(row): row for row in generated}
+    seen = set()
+    for row in rows:
+        key = row_key(row)
+        if key not in source or key in seen or row.get("run_id") != run["run_id"] or row.get("stage_id") != state["stage_id"]:
+            raise ValueError("duplicate, unexpected or mixed-run projection")
+        payload = {k: v for k, v in row.items() if k != "record_sha256"}
+        if fingerprint(payload) != row.get("record_sha256"):
+            raise ValueError("projection record checksum mismatch")
+        proj, fire = row.get("proj"), row.get("fire_frac")
+        if proj is None:
+            if source[key]["reply"].strip() or fire is not None or row.get("reason") != "empty_response":
+                raise ValueError("null projection requires a documented empty response")
+        elif type(proj) not in (int, float) or not math.isfinite(proj) or type(fire) not in (int, float) or not math.isfinite(fire) or not 0 <= fire <= 1:
+            raise ValueError("invalid projection or cap firing fraction")
+        seen.add(key)
+    if state["status"] == "complete" and (seen != set(source) or len(rows) != state.get("count")):
+        raise ValueError("completed projections do not cover the generated responses")
+    return rows
 
 
+def append_projection(run_dir, row):
+    row = {**row, "record_sha256": fingerprint(row)}
+    with (Path(run_dir) / "projections.jsonl").open("ab") as stream:
+        stream.write(encoded(row))
+        stream.flush()
+        os.fsync(stream.fileno())
+    return row

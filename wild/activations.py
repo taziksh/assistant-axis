@@ -43,6 +43,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("run_dir")
     args = ap.parse_args()
+    if os.path.exists(os.path.join(args.run_dir, "drift.manifest.json")):
+        raise ValueError("use drift_activations.py for a protected drift run")
     convs = {
         c["hash"]: c
         for c in read_jsonl(os.path.join(args.run_dir, "selected.jsonl"))
