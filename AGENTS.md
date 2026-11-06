@@ -21,3 +21,12 @@ Test whether movement away from the Assistant Axis predicts harmful responses af
 Evaluate whether the authors' activation-capping intervention reduces harmful behavior in real conversational settings. Assess its effect on ordinary assistance and useful capabilities as well as safety. The goal is to understand whether the reported safety benefits transfer and what tradeoffs arise in practice.
 
 These are empirical questions, not assumed outcomes. Treat literature claims and proposed experiments as research context. Distinguish implemented methods, completed runs, and observed results when describing progress or drawing conclusions.
+
+## Runtime lessons
+
+Read [the experiment incident log](wild/docs/incident-log.md) before changing classifier constraints, GPU launchers, or restart procedures.
+
+- Prefer tracked `python -m wild...` entry points. Any multiprocessing launcher must protect operational work with `if __name__ == "__main__":`; verify that importing it as `__mp_main__` does not launch jobs or acquire output locks.
+- Test structured-output schemas with the actual deployed grammar backend on CPU before loading the 70B model. Mocked sampling parameters do not verify grammar enforcement. Preserve strict parsing of required fields and valid domain/subtopic pairs.
+- Inspect the first worker exception before diagnosing shutdown warnings or lock contention. Preserve failed artifacts and locks; do not bypass checks to make a run appear successful.
+- Treat cached weights, successful imports, successful GPU inference, classifier agreement, and valid activation extraction as distinct evidence. Let the user control experiment launches when requested.

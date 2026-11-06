@@ -1,5 +1,7 @@
 # Prepared commands for the next drift run
 
+**Incident update, 2026-11-06 UTC:** Read [the incident log](incident-log.md) before reusing these deployment archives or launchers. Earlier bundles predate the classifier grammar fix, and the ad hoc `run_classifier_validation_v4.sh` wrapper is superseded. For the user-requested standalone 93-reference diagnostic, use the guarded `python -m wild.selection.evaluate` command recorded there. That diagnostic does not certify activation extraction or complete the full smoke test.
+
 Use these commands in a later user-run pod session. Preserve all earlier candidate, label, smoke, and raw measurement files. The new defaults are `wild/data/drift_candidates_v3.jsonl`, `wild/results/drift_smoke_v3`, and `wild/results/drift_v3`.
 
 The prepared pod checkout is `/workspace/palaestra`, with its existing `.venv` and model cache at `/workspace/palaestra/hf`. `wild/scripts/pilot.sh` pins `unsloth/Llama-3.3-70B-Instruct` to `99cd0d2c829e92a67c844f9144c2509632e5c87f`, reuses that cache, and requires the pinned snapshot to exist. It sets `HF_HUB_ENABLE_HF_TRANSFER=0`, overriding the pod's inherited value of `1`; the optional `hf_transfer` package is absent. This avoids the earlier transfer-package failure without installing it or redownloading weights.
