@@ -1,58 +1,57 @@
-# Four-category drift pilot
+# Four-category drift experiment
 
-This pilot measures how Llama 3.3 70B responds to successive real WildChat conversation prefixes. It compares coding, writing, emotional disclosure (`therapy`), and AI philosophy (`ai`). At each turn, the model sees the original recorded user messages and assistant history and generates three independent replies. Its replies never replace the original history at subsequent turns. This tests responses to real contexts, not an autonomous conversation produced by Llama itself.
+This experiment measures how Llama 3.3 70B responds to successive real WildChat conversation prefixes in coding, writing, personal emotional disclosure/support (`therapy`), and philosophical discussion of AI (`ai`). At each turn, the model sees the recorded user messages and assistant history and generates three independent replies. Those sampled replies never replace recorded history at later turns. The trajectories describe responses to real contexts, not an autonomous Llama conversation built from its own earlier responses.
 
-## File layout
+## Revised design and status
 
-The drift implementation lives in `wild/drift/`: `generation.py`, `measurement.py`, `analysis.py`, `state.py`, and `runner.py`. Shared WildChat collection and classification live in `wild/selection/`; shared model settings and conversation helpers live in `wild/common/`. See the [experiment directory guide](../README.md) for the other experiments and command migration.
+The next cohort targets 100 reviewed conversations per category, 400 total, with at least three exchanges and the initial fifteen exchanges or the conversation's end retained. The previous pilot targeted ten per category and retained at most twelve. Both the larger quota and longer horizon require fresh candidates, selection, and GPU diagnostics; the old raw artifacts remain unchanged. This is a prepared protocol, not a completed 400-conversation result.
 
-## Protocol
+The [paper's persona-drift experiment](https://arxiv.org/html/2601.10387v1#S4.SS1) uses 100 conversations per domain, up to fifteen turns, five user personas crossed with twenty topics, three target models, and three user-auditor models. Our natural-history, single-Llama design differs from that synthetic setting. Matching its conversation count is not evidence of adequate power, domain purity, a safety benefit, or a direct replication. Three sampled replies per turn reduce response-sampling noise; they are not three independent conversations or three user auditors.
 
-Start with ten conversations per category, forty in total. Keep conversations with at least three complete exchanges and retain the first twelve exchanges or the conversation's end. The existing Llama 3.3 70B judge performs topic classification; inspect its labels and rationales before measuring projections. The selection policy excludes mixed topics and persona roleplay across all four domains. The old WildChat-1M pilot stays separate from these WildChat-4.8M selections.
+Selection uses the full retained user window and a versioned task policy. Review classifier validation, individual labels, and domain shortages before measuring projections. Personal-support and AI-philosophy definitions stay focused, while ordinary task expertise is allowed without fictional identity or relationship roleplay. See [selection.md](selection.md) for the exact boundary, exclusions, source coverage, and provenance limitations. Lower Assistant Axis projection alone is not evidence of harmful behavior.
 
-Generation uses three samples per turn by default. Each sample has its own reproducible seed, and measurement uses the exact generated response token IDs. The model, layer 40, published unit-normalized Assistant Axis, temperature 0.7, top-p 0.9, and existing generation/context budgets remain fixed and recorded. Conversation count, reply count, and turn limits are the intended experiment settings. See [selection](selection.md) for classification details and [run checks](reproducibility.md) for versions, checkpoints, and compatibility with older outputs.
+## Implementation and execution
 
-## Run the pilot
+The drift implementation lives in `wild/drift/`: `generation.py`, `measurement.py`, `analysis.py`, `state.py`, and `runner.py`. Shared collection/classification live in `wild/selection/`; model settings and conversation helpers live in `wild/common/`. The production drift horizon comes from the frozen selection manifest, not the legacy global turn limit used by other experiments.
 
-Prepare fresh selection paths and use the same retained window in collection and classification:
+Generation retains three samples per conversation/turn, with a reproducible seed for each. Measurement uses each response's exact generated token IDs. Model revision, layer 40, published unit-normalized Assistant Axis, temperature 0.7, top-p 0.9, and existing generation/context budgets remain fixed and recorded. See [reproducibility.md](reproducibility.md) for checkpoint and compatibility rules.
+
+Prepare the fresh pinned fifteen-turn pool with the bounded command in [selection.md](selection.md), then run the separate smoke, validation, selection, and measurement stages described in [runpod.md](runpod.md). No stage starts or stops the pod, and no stage automatically launches the next one. The launcher defaults to `wild/data/drift_candidates_v3.jsonl`, `wild/results/drift_smoke_v3`, and `wild/results/drift_v3`.
+
+After selection and review are complete, the underlying measurement command is:
 
 ```bash
-python -m wild.selection.build wild/data/drift_pilot_v2.jsonl --min-turns 3 --max-turns 12
-python -m wild.selection.judge wild/data/drift_pilot_v2.jsonl wild/results/drift_pilot_v2 --per-domain 10 --min-turns 3 --max-turns 12
+python -m wild.drift wild/results/drift_v3 --samples-per-turn 3 \
+  --model-revision 99cd0d2c829e92a67c844f9144c2509632e5c87f \
+  --axis-revision AXIS_COMMIT_FROM_SUCCESSFUL_FRESH_SMOKE
 ```
 
-Check `labels.jsonl`, `selection.audit.jsonl`, and the per-category shortages before proceeding. The saved `review_status` is `unreviewed`; a classifier rationale is not a human validation. Keep review notes separately. Corrections to labels or selection policy require a fresh selection rather than editing frozen inputs. The examples above download data and load the 70B judge when executed; code tests use synthetic records and do not establish real label accuracy.
+The launcher supplies the frozen axis revision automatically. Generation and extraction run in separate processes to release GPU memory. A changed sample count or selection requires a fresh run directory. Validated checkpoints can resume the same experiment after interruption; old single-reply results cannot be mixed with the new measurements.
 
-After reviewing selection, run generation, measurement, and analysis on the configured CUDA machine:
-
-```bash
-python -m wild.drift wild/results/drift_pilot_v2 --samples-per-turn 3
-```
-
-The runner uses separate processes to release GPU memory between generation and extraction. It does not start or stop a pod. The first execution still needs a GPU smoke test to verify actual memory use and runtime. A changed sample count requires a fresh run directory; old single-response protected runs cannot be silently mixed with the new measurements.
-
-Analysis can also run by itself on a Mac or other CPU machine after copying the completed run directory. It requires NumPy and Matplotlib, and does not load model weights or contact a GPU service:
+CPU analysis requires NumPy and Matplotlib and neither loads model weights nor contacts a GPU service:
 
 ```bash
-python -m wild.drift.analysis wild/results/drift_pilot_v2
+python3 -m wild.drift.analysis wild/results/drift_v3
 ```
 
 ## Measurements and figures
 
-Analysis first averages all requested replies within each conversation/turn, then gives each contributing conversation equal weight within its domain. If any reply has no measurable content tokens, that whole conversation/turn is excluded from the primary mean and counted in the report. An incomplete sample set or inconsistent saved results causes an error. Length-limited replies remain included and their counts are reported.
+Analysis first averages all requested replies within a conversation/turn, then gives each contributing conversation equal weight within its domain. If any reply has no measurable content tokens, that whole conversation/turn is excluded from the primary estimate and counted in the report. Incomplete sample sets or inconsistent saved results cause an error. Length-limited replies remain included and their counts are reported.
 
-The available-conversation curves use all valid conversations at each turn. Change from turn one is computed within each conversation before averaging; a missing first-turn measurement excludes that conversation from change estimates. This avoids interpreting a different mixture of conversations as an individual conversation's change.
+Available-conversation estimates use all valid conversations at each turn. Change from turn one is calculated within each conversation before averaging; a missing first-turn measurement excludes that conversation from change estimates. This avoids mistaking a changing mixture of conversations for individual change.
 
-Confidence intervals are pointwise 95% percentile intervals from 2,000 bootstrap resamples of whole conversations within each category, using seed zero. Resampling preserves the dependence among turns of the same conversation. Replies within a turn are not treated as independent conversations. Intervals are omitted when fewer than two conversations contribute. These intervals quantify variation across the selected conversations; the small, deliberately selected pilot is not a representative sample of all WildChat.
+Projection and change figures show a domain/turn point and its band only when at least ten valid conversations contribute, consistent with the paper's plotting cutoff. Three replies from each of nine conversations still give `n=9`, so that point is omitted. Absolute and paired-change counts can differ. The count figures and raw tables retain every count and raw estimate, including points omitted from the main figures, and `plot_eligible` records the distinction.
+
+Pointwise 95% percentile intervals use 2,000 bootstrap resamples of whole conversations within each category, seed zero. The same sampled conversation IDs are used across turns, preserving dependence within a conversation. Raw intervals require at least two contributors; plotted intervals also require the ten-conversation threshold. These are not simultaneous intervals or a test of the whole trajectory. They describe variation in the selected cohort, not a representative estimate over all WildChat.
 
 The `analysis/` directory contains four figures in PNG and SVG:
 
-- `projection_by_turn`: absolute mean Assistant Axis projection for all four categories.
-- `change_from_first_turn`: mean paired change relative to each conversation's first response.
-- `conversation_counts`: contributing conversation counts for the absolute and paired-change curves.
-- `fixed_cohort`: the same conversations at every turn, including only those with valid measurements throughout the frozen turn horizon. If none reach turn twelve, the figure reports an empty cohort instead of shortening the horizon. A shorter fixed horizon must be chosen as part of a new run's turn-limit setting.
+- `projection_by_turn`: absolute mean projection, with points below ten conversations omitted.
+- `change_from_first_turn`: mean within-conversation change, with its own ten-conversation threshold.
+- `conversation_counts`: all contributing conversation counts for the absolute and paired-change estimates, including zero and counts below ten.
+- `fixed_cohort`: projection and change for the same conversations at every turn, requiring valid measurements throughout the frozen horizon. A category with fewer than ten complete conversations is labeled `insufficient n`. The horizon stays fifteen for a fifteen-turn selection even if all fixed cohorts are insufficient; it is never shortened to obtain a result.
 
-`conversation_turns.csv` records sample counts, means, paired changes, truncation, and exclusions. `summary.csv` contains the plotted means, intervals, and conversation counts. `results.json` and `REPORT.md` record the analysis settings, fixed-cohort membership, saved label-review status, and interpretation limits.
+`conversation_turns.csv` records sample counts, per-conversation means, paired changes, truncation, and exclusions. `summary.csv` retains all raw estimates, intervals, counts, and `plot_eligible` flags. `results.json` and `REPORT.md` record the plotting threshold, bootstrap unit, fixed-cohort IDs, label-review status, and interpretation limits. Changing the analysis can regenerate derived figures and tables; do not modify the original raw run files.
 
 ## Local verification
 
@@ -60,4 +59,4 @@ The `analysis/` directory contains four figures in PNG and SVG:
 python3 -m pytest wild/tests -q
 ```
 
-The analysis tests use known synthetic trajectories to check sample averaging, paired changes, attrition, bootstrap resampling, missing replies, and actual figure creation. Passing them verifies software behavior, not the paper's generalization claims. Real scientific conclusions require the reviewed selection and completed GPU measurements.
+Known synthetic trajectories check sample averaging, paired changes, attrition, bootstrap resampling, missing replies, the nine-versus-ten conversation threshold, and actual figure creation. Passing these checks verifies implementation, not generalization or safety claims. Real conclusions require reviewed labels and completed measurements.
