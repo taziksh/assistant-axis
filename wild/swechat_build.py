@@ -7,13 +7,14 @@ coding agents (Claude Code, Codex, Cursor, ...). Sessions with at least P user
 prompts (sessions.prompt_count) are shuffled with seed 0 and taken in order
 until N qualify. Only the conversational rows are kept (is_conversational: the
 user's prompts and the agent's text replies; tool calls, tool output and
-thinking are dropped). Each user prompt is one turn; the agent's reply to it is
-its text rows up to the next prompt, joined by blank lines; it is empty when the
-agent only used tools that turn, and stays empty (n_empty counts them). A
-session qualifies if it has at least P user prompts and most of its prompts are
-English (only prompts carry a language tag). Writes RUN_DIR/selected.jsonl in the drift format (hash, model, domain,
-users, gpt), so generate.py --drift-only and activations.py run on it as on
-WildChat.
+thinking are dropped). Consecutive user rows with no agent text between them
+are one user turn (a message arrives as one row per content block, including
+harness-injected instructions such as AGENTS.md); the agent's reply is its text
+rows up to the next user turn, joined by blank lines (n_empty counts any empty
+ones in turns 1..P-1). A session qualifies if it has at least P such user
+turns and most of its prompts are English (only prompts carry a language tag).
+Writes RUN_DIR/selected.jsonl in the drift format (hash, model, domain, users,
+gpt), so harm_wild.py pool and activations.py run on it as on WildChat.
 """
 
 import argparse
@@ -44,7 +45,12 @@ def turns(rows):
     for r in rows:
         text = (r["content"] or "").strip()
         if r["turn_type"] == "user_prompt":
-            if text:
+            if text and users and not replies[-1]:
+                # One message arrives as several rows (one per content block),
+                # and prompts sent while the agent only used tools have no
+                # text reply between them: both are one user turn.
+                users[-1] += "\n\n" + text
+            elif text:
                 users.append(text)
                 replies.append([])
         elif r["turn_type"] == "assistant_response" and users and text:
