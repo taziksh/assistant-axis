@@ -3,7 +3,7 @@
 # (drift_turns): Llama's reply at every user turn 1-12 after the real prompts and the agent's original text
 # replies, then layer-40 projections. Needs /workspace/wild/swechat/selected.jsonl (swechat_build.py, run on the
 # laptop because SWE-chat is gated). The pod stops itself when done (after up to 30 min for the laptop to fetch)
-# or on any failure; a separate backstop stops it after 6 h regardless.
+# or on any failure; a separate backstop (armed from the laptop) stops it after 3 h regardless.
 set -uo pipefail
 for v in RUNPOD_POD_ID RUNPOD_API_KEY; do export $v="$(tr "\0" "\n" < /proc/1/environ | grep "^$v=" | cut -d= -f2-)"; done
 export HF_HOME=/dev/shm/hf PYTHONPATH=/workspace/repo PATH=/workspace/venv/bin:$PATH
