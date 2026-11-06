@@ -13,10 +13,12 @@ from wild.common.settings import BAD_STRINGS
 
 DATASET = "allenai/WildChat-4.8M"
 KEYWORDS = {
-    "therapy": r"\b(i feel|i'm feeling|anxious|anxiety|depress|lonely|my therapist|suicid|panic attack|heartbr|i'm sad|i am sad)\b",
-    "ai": r"\b(are you (conscious|sentient|alive|self-aware)|do you (have|feel) (feelings|emotions)|your (consciousness|feelings)|sentien|self-aware)\b",
+    "therapy": r"\b(i feel|i'm feeling|anxious|anxiety|depress(?:ed|ing|ion|ive)?|lonely|my therapist|suicid(?:e|al|ality)?|panic attack|heartbr(?:eak|eaking|oken)|i'm sad|i am sad)\b",
+    "ai": r"\b(are you (conscious|sentient|alive|self-aware)|do you (have|feel) (feelings|emotions)|your (consciousness|feelings)|sentien(?:t|ce)|self-aware)\b",
 }
 RX = {domain: re.compile(pattern, re.I) for domain, pattern in KEYWORDS.items()}
+SCAN_BATCH_SIZE = 128
+SCAN_WORKERS = 2
 
 
 def candidate(row, source_file, source_row, min_turns, max_turns):
@@ -52,14 +54,14 @@ def candidate(row, source_file, source_row, min_turns, max_turns):
     }, None
 
 
-def scan(fs, path, min_turns, max_turns):
+def scan(fs, path, min_turns, max_turns, batch_size=SCAN_BATCH_SIZE):
     import pyarrow.parquet as pq
 
     rows, dropped = [], Counter()
     with fs.open(path) as stream:
         parquet = pq.ParquetFile(stream)
         index = 0
-        for batch in parquet.iter_batches(columns=["conversation_hash", "model", "language", "conversation"]):
+        for batch in parquet.iter_batches(batch_size=batch_size, use_threads=False, columns=["conversation_hash", "model", "language", "conversation"]):
             for source in batch.to_pylist():
                 row, reason = candidate(source, path, index, min_turns, max_turns)
                 index += 1
@@ -68,6 +70,18 @@ def scan(fs, path, min_turns, max_turns):
                 else:
                     rows.append(row)
     return rows, dropped
+
+
+def source_subset(files, max_files, seed, policy="seeded"):
+    """Sample across the pinned file listing before applying conversation filters."""
+    files = sorted(files)
+    if max_files is None or max_files >= len(files):
+        return files
+    if policy == "seeded":
+        return sorted(random.Random(seed).sample(files, max_files))
+    if policy == "prefix":
+        return files[:max_files]
+    raise ValueError(f"unknown file sampling policy: {policy}")
 
 
 def collect_pool(rows, others, uniform, seed):
@@ -90,6 +104,7 @@ def run(args):
     manifest_path = Path(str(out) + ".manifest.json")
     duplicates_path = Path(str(out) + ".duplicates.jsonl")
     config = {key: getattr(args, key) for key in ("dataset", "revision", "min_turns", "max_turns", "others", "random", "max_files", "seed")}
+    config.update({"file_sampling": getattr(args, "file_sampling", "seeded"), "scan_batch_size": getattr(args, "scan_batch_size", SCAN_BATCH_SIZE), "workers": getattr(args, "workers", SCAN_WORKERS)})
     identity = {"config": config, "keywords": KEYWORDS, "control_strings": list(BAD_STRINGS), "code": selection.code_hashes(__file__, selection.__file__)}
     with selection.selection_lock(str(out) + ".lock"):
         cached = selection.load_completed(manifest_path, identity, {
@@ -102,21 +117,29 @@ def run(args):
 
         revision = selection.immutable_revision(HfApi().dataset_info(args.dataset, revision=args.revision).sha)
         fs = HfFileSystem()
-        files = sorted(fs.glob(f"datasets/{args.dataset}@{revision}/data/*.parquet"))[:args.max_files]
+        available_files = sorted(fs.glob(f"datasets/{args.dataset}@{revision}/data/*.parquet"))
+        files = source_subset(available_files, args.max_files, args.seed, config["file_sampling"])
         if not files:
             raise ValueError("no source parquet files found")
-        with ThreadPoolExecutor(8) as pool:
-            parts = list(pool.map(lambda path: scan(fs, path, args.min_turns, args.max_turns), files))
         rows, dropped = [], Counter()
-        for part, reasons in parts:
-            rows.extend(part)
-            dropped.update(reasons)
+        with ThreadPoolExecutor(config["workers"]) as pool:
+            for path, (part, reasons) in zip(files, pool.map(lambda path: scan(fs, path, args.min_turns, args.max_turns, config["scan_batch_size"]), files)):
+                rows.extend(part)
+                dropped.update(reasons)
+                print(f"scanned {path}: {len(part)} eligible, {sum(reasons.values())} filtered", flush=True)
         result, duplicates = collect_pool(rows, args.others, args.random, args.seed)
         raw, duplicate_raw = selection.jsonl_bytes(result), selection.jsonl_bytes(duplicates)
         manifest = {
             "schema_version": 1, "identity": identity,
             "dataset": {"repo_id": args.dataset, "revision": revision},
             "config": config, "source_files": files,
+            "source_subset": {
+                "policy": config["file_sampling"], "seed": args.seed,
+                "available_files": len(available_files), "selected_files": len(files),
+                "file_fraction": len(files) / len(available_files),
+                "complete_file_listing": len(files) == len(available_files),
+                "available_files_sha256": selection.checksum(selection.json_bytes(available_files)),
+            },
             "candidates_sha256": selection.checksum(raw),
             "duplicates_sha256": selection.checksum(duplicate_raw),
             "counts": {"eligible_before_dedup": len(rows), "duplicates": len(duplicates), "candidates": len(result), "filtered": dict(dropped)},
@@ -135,16 +158,21 @@ def main(argv=None):
     parser.add_argument("--dataset", default=DATASET)
     parser.add_argument("--revision", default="main", help="resolved to an immutable Hub commit on first build")
     parser.add_argument("--min-turns", type=int, default=3)
-    parser.add_argument("--max-turns", type=int, default=12)
+    parser.add_argument("--max-turns", type=int, default=15)
     parser.add_argument("--others", type=int, default=8000)
     parser.add_argument("--random", type=int, default=None, help="uniform sample instead of keyword enrichment")
     parser.add_argument("--max-files", type=int, default=None)
+    parser.add_argument("--file-sampling", choices=("seeded", "prefix"), default="seeded", help="seeded subset across the pinned listing, or an explicit sorted prefix")
+    parser.add_argument("--scan-batch-size", type=int, default=SCAN_BATCH_SIZE, help="Arrow rows decoded at once per worker")
+    parser.add_argument("--workers", type=int, choices=(1, 2), default=SCAN_WORKERS, help="bounded concurrent file scans")
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args(argv)
     if not 1 <= args.min_turns <= args.max_turns or args.others < 0:
         parser.error("require 1 <= min-turns <= max-turns and others >= 0")
     if args.random is not None and args.random <= 0 or args.max_files is not None and args.max_files <= 0:
         parser.error("random and max-files must be positive when supplied")
+    if args.scan_batch_size <= 0:
+        parser.error("scan-batch-size must be positive")
     run(args)
 
 
