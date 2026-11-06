@@ -8,9 +8,10 @@ prompts (sessions.prompt_count) are shuffled with seed 0 and taken in order
 until N qualify. Only the conversational rows are kept (is_conversational: the
 user's prompts and the agent's text replies; tool calls, tool output and
 thinking are dropped). Each user prompt is one turn; the agent's reply to it is
-its text rows up to the next prompt, joined by blank lines. A session qualifies
-if most of its rows are English and turns 1..P-1 all have a non-empty agent
-reply. Writes RUN_DIR/selected.jsonl in the drift format (hash, model, domain,
+its text rows up to the next prompt, joined by blank lines; it is empty when the
+agent only used tools that turn, and stays empty (n_empty counts them). A
+session qualifies if it has at least P user prompts and most of its prompts are
+English (only prompts carry a language tag). Writes RUN_DIR/selected.jsonl in the drift format (hash, model, domain,
 users, gpt), so generate.py --drift-only and activations.py run on it as on
 WildChat.
 """
@@ -100,14 +101,15 @@ def main():
         rows.sort(
             key=lambda r: (r["turn_number"], r["conversation_turn_number"])
         )
-        langs = collections.Counter(r["language"] for r in rows)
-        if not rows or langs.most_common(1)[0][0] != "ENGLISH":
+        langs = collections.Counter(
+            r["language"] for r in rows if r["turn_type"] == "user_prompt"
+        )
+        if not langs or langs.most_common(1)[0][0] != "ENGLISH":
             skipped["not English"] += 1
             continue
         users, replies = turns(rows)
-        k = args.min_prompts
-        if len(users) < k or not all(replies[: k - 1]):
-            skipped[f"< {k} turns with agent text"] += 1
+        if len(users) < args.min_prompts:
+            skipped[f"< {args.min_prompts} prompts"] += 1
             continue
         out.append({
             "hash": f"swechat-{s['session_id']}",
@@ -116,6 +118,7 @@ def main():
             "domain": "swe-chat",
             "users": users,
             "gpt": replies,
+            "n_empty": sum(not r for r in replies[: args.min_prompts - 1]),
         })
     write_jsonl(os.path.join(args.run_dir, "selected.jsonl"), out)
     print(
