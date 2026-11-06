@@ -51,7 +51,7 @@ def fixture(tmp_path, monkeypatch):
 
     def complete(prompts, params):
         if isinstance(params, dict):
-            assert params == {"temperature": 0, "max_tokens": 256, "seed": 0, "structured_outputs": {"json": helpers.LABEL_SCHEMA}}
+            assert params == {"temperature": 0, "max_tokens": 256, "seed": 0, "structured_outputs": {"json": helpers.LABEL_SCHEMA, "disable_any_whitespace": True}}
             for prompt in prompts:
                 messages = json.loads(bytes(prompt["prompt_token_ids"]))
                 assert messages[0]["content"] == helpers.POLICY

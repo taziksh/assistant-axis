@@ -199,7 +199,7 @@ def run(args, model_loader=judge.load_judge):
         "references_sha256": selection.file_checksum(args.references),
         "reference_manifest_sha256": selection.file_checksum(str(args.references) + ".manifest.json"),
         "model": MODEL, "revision": revision, "policy_version": selection.POLICY_VERSION,
-        "structured_outputs": {"json": selection.LABEL_SCHEMA},
+        "structured_outputs": {"json": selection.LABEL_SCHEMA, "disable_any_whitespace": True},
         "policy_sha256": selection.checksum(selection.POLICY.encode()),
         "taxonomy": selection.taxonomy_metadata(),
         "configuration": {key: getattr(args, key) for key in ("min_turns", "max_turns", "context_limit", "output_tokens")},

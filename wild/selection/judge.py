@@ -34,7 +34,7 @@ def classification_sampling_params(output_tokens):
     from vllm.sampling_params import StructuredOutputsParams
 
     return SamplingParams(temperature=0, max_tokens=output_tokens, seed=0,
-                          structured_outputs=StructuredOutputsParams(json=selection.LABEL_SCHEMA))
+                          structured_outputs=StructuredOutputsParams(json=selection.LABEL_SCHEMA, disable_any_whitespace=True))
 
 
 def completion_record(output):
@@ -123,7 +123,7 @@ def run(args, model_loader=load_judge, revision_resolver=resolve_revision):
     manifest_path = run_dir / "selected.manifest.json"
     config = {key: getattr(args, key) for key in ("min_turns", "max_turns", "per_domain", "seed")}
     config.update(target_per_subtopic=args.per_domain / 5, stratification="best_effort_subtopics")
-    judge = {"model": MODEL, "requested_revision": args.model_revision, "context_limit": args.context_limit, "output_tokens": args.output_tokens, "temperature": 0, "seed": 0, "dtype": "bfloat16", "structured_outputs": {"json": selection.LABEL_SCHEMA}, "runtime": runtime_versions()}
+    judge = {"model": MODEL, "requested_revision": args.model_revision, "context_limit": args.context_limit, "output_tokens": args.output_tokens, "temperature": 0, "seed": 0, "dtype": "bfloat16", "structured_outputs": {"json": selection.LABEL_SCHEMA, "disable_any_whitespace": True}, "runtime": runtime_versions()}
     identity = {
         "candidates_sha256": selection.file_checksum(source_path),
         "candidate_manifest_sha256": selection.file_checksum(source_manifest_path),

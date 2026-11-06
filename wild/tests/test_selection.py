@@ -130,7 +130,7 @@ def test_sampling_schema_and_completion_metadata_match_production_contract(monke
     monkeypatch.setitem(sys.modules, "vllm", types.SimpleNamespace(SamplingParams=lambda **kw: kw))
     monkeypatch.setitem(sys.modules, "vllm.sampling_params", types.SimpleNamespace(StructuredOutputsParams=lambda **kw: kw))
     params = judge.classification_sampling_params(256)
-    assert params == {"temperature": 0, "max_tokens": 256, "seed": 0, "structured_outputs": {"json": selection.LABEL_SCHEMA}}
+    assert params == {"temperature": 0, "max_tokens": 256, "seed": 0, "structured_outputs": {"json": selection.LABEL_SCHEMA, "disable_any_whitespace": True}}
     assert set(selection.LABEL_SCHEMA["properties"]["domain"]["enum"]) == selection.LABELS
     output = types.SimpleNamespace(outputs=[types.SimpleNamespace(text="raw", finish_reason="length", stop_reason=None, token_ids=[3, 4])])
     assert judge.completion_record(output) == {"text": "raw", "finish_reason": "length", "stop_reason": None, "output_tokens": 2}
