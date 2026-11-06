@@ -52,3 +52,9 @@ wild/results/
 wild/data/
 sanity_check/results/
 wild/figures/
+.venv-spotcheck/
+wild/results_docent/
+wild/results_docent_fetch.log
+wild/results_docent_full/
+wild/results_docent_harm/
+wild/figures_two_axis/

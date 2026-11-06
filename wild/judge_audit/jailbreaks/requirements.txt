@@ -1,0 +1,10 @@
+# Light environment for this audit (no GPU, no torch). Versions are the ones it was run with.
+# Install: uv venv .venv-spotcheck && uv pip install --python .venv-spotcheck/bin/python -r wild/judge_audit/jailbreaks/requirements.txt
+pandas==3.1.1            # jbsets.py, DAN question recovery
+pyarrow==26.0.1          # pandas parquet reader for the in-the-wild jailbreak prompts
+transformers==4.57.6     # Llama 3.3 tokenizer for the judge's 512-token cut (same pin as wild/run.sh)
+docent-python==0.1.88    # downloading the capping collections from Docent
+openai==3.45.0           # OpenRouter client for the judges
+numpy==2.5.4
+scipy==1.18.1            # imported by wild/tables.py (figure CIs)
+matplotlib==3.11.2       # figures_two_axis.py
