@@ -21,7 +21,6 @@ import os
 import random
 
 from huggingface_hub import hf_hub_download
-from huggingface_hub import HfFileSystem
 import pyarrow.parquet as pq
 from wcommon import write_jsonl
 
@@ -73,10 +72,10 @@ def main():
         f"{len(pool)} sessions with >= {args.min_prompts} prompts", flush=True
     )
 
+    # Download the whole table once (6.4 GB); reading it remotely in pieces is
+    # far slower.
     pf = pq.ParquetFile(
-        HfFileSystem().open(
-            f"datasets/{REPO}/conversations.parquet", "rb", block_size=2**22
-        )
+        hf_hub_download(REPO, "conversations.parquet", repo_type="dataset")
     )
     # Which row groups hold which sessions (session_id column only).
     where = collections.defaultdict(list)
