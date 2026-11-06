@@ -4,6 +4,7 @@ import argparse
 import copy
 from collections import Counter
 import json
+import runpy
 from pathlib import Path
 import sys
 
@@ -13,6 +14,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from wild.selection import evaluate, helpers, judge
 
 SHA = "a" * 40
+
+
+def test_spawned_import_does_not_launch_evaluation(monkeypatch):
+    def forbidden(*args, **kwargs):
+        pytest.fail("A spawned child must not parse arguments or start validation")
+
+    monkeypatch.setattr(argparse.ArgumentParser, "parse_args", forbidden)
+    namespace = runpy.run_path(evaluate.__file__, run_name="__mp_main__")
+    assert callable(namespace["main"])
 
 
 def reference(key, domain="coding", split="heldout", topic="default", turns=3):
