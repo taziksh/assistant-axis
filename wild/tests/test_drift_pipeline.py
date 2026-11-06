@@ -54,12 +54,12 @@ def test_four_domain_selection_handoff_and_verified_reuse(tmp_path, monkeypatch)
         for prompt in prompts:
             messages = json.loads(bytes(prompt))
             users = json.loads(messages[1]["content"])["user_messages"]
-            answers.append(json.dumps({"domain": users[0].split()[0], "rationale": "Synthetic topic fixture."}))
+            answers.append(json.dumps({"domain": users[0].split()[0], "subtopic": selection.SUBTOPICS[users[0].split()[0]][0], "rationale": "Synthetic topic fixture."}))
         return answers
 
     output = tmp_path / "run"
     args = argparse.Namespace(
-        convs=str(pool), run_dir=str(output), per_domain=1, min_turns=3,
+        convs=str(pool), run_dir=str(output), per_domain=5, min_turns=3,
         max_turns=3, seed=5, model_revision="main", context_limit=16384, output_tokens=256,
     )
     result = judge.run(args, model_loader=lambda *a: (Tokenizer(), classify), revision_resolver=lambda *a: revision)

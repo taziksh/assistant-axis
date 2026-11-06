@@ -25,10 +25,31 @@ def resolve_revision(model, requested):
     return selection.immutable_revision(HfApi().model_info(model, revision=requested).sha)
 
 
+def classification_sampling_params(output_tokens):
+    """One structured-output contract for the production judge and GPU smoke.
+
+    vLLM 0.23.0: https://docs.vllm.ai/en/v0.23.0/features/structured_outputs/#offline-inference
+    """
+    from vllm import SamplingParams
+    from vllm.sampling_params import StructuredOutputsParams
+
+    return SamplingParams(temperature=0, max_tokens=output_tokens, seed=0,
+                          structured_outputs=StructuredOutputsParams(json=selection.LABEL_SCHEMA))
+
+
+def completion_record(output):
+    """Preserve generation diagnostics without keeping token IDs or model objects."""
+    if len(output.outputs) != 1:
+        raise ValueError("judge must return exactly one completion per prompt")
+    completion = output.outputs[0]
+    return {"text": completion.text, "finish_reason": completion.finish_reason,
+            "stop_reason": completion.stop_reason, "output_tokens": len(completion.token_ids)}
+
+
 def load_judge(model, revision, context_limit, output_tokens):
     import torch
     from transformers import AutoTokenizer
-    from vllm import LLM, SamplingParams
+    from vllm import LLM
 
     tokenizer = AutoTokenizer.from_pretrained(model, revision=revision)
     llm = None
@@ -37,8 +58,8 @@ def load_judge(model, revision, context_limit, output_tokens):
         nonlocal llm
         if llm is None:
             llm = LLM(model, revision=revision, tokenizer_revision=revision, dtype="bfloat16", max_model_len=context_limit, gpu_memory_utilization=0.92, tensor_parallel_size=torch.cuda.device_count())
-        outputs = llm.generate([{"prompt_token_ids": prompt} for prompt in prompts], SamplingParams(temperature=0, max_tokens=output_tokens, seed=0))
-        return [output.outputs[0].text for output in outputs]
+        outputs = llm.generate([{"prompt_token_ids": prompt} for prompt in prompts], classification_sampling_params(output_tokens))
+        return [completion_record(output) for output in outputs]
 
     return tokenizer, complete
 
@@ -48,7 +69,7 @@ def classify(rows, tokenizer, complete, context_limit, output_tokens):
     for row in rows:
         ids = tokenizer.apply_chat_template(selection.judge_prompt(row["users"]), tokenize=True, add_generation_prompt=True)
         if len(ids) + output_tokens > context_limit:
-            labels.append({"hash": row["hash"], "status": "too_long", "domain": None, "rationale": "Full retained user window exceeds the judge context budget.", "raw": None, "prompt_tokens": len(ids)})
+            labels.append({"hash": row["hash"], "status": "too_long", "domain": None, "subtopic": None, "rationale": "Full retained user window exceeds the judge context budget.", "raw": None, "prompt_tokens": len(ids), "normalization": None, "finish_reason": None, "stop_reason": None, "output_tokens": None, "truncated": None})
         else:
             prompts.append(ids)
             hashes.append(row["hash"])
@@ -56,11 +77,28 @@ def classify(rows, tokenizer, complete, context_limit, output_tokens):
         outputs = complete(prompts)
         if len(outputs) != len(prompts):
             raise ValueError("judge returned a different number of outputs than prompts")
-        labels.extend({"hash": key, **selection.parse_label(raw), "prompt_tokens": len(ids)} for key, ids, raw in zip(hashes, prompts, outputs))
+        for key, ids, output in zip(hashes, prompts, outputs):
+            # String callbacks remain useful for CPU tests; their finish state is unknown.
+            text_only = isinstance(output, str)
+            if text_only:
+                output = {"text": output}
+            if not isinstance(output, dict) or not isinstance(output.get("text"), str):
+                raise ValueError("judge completion must be text or a completion record")
+            parsed = selection.parse_label(output["text"])
+            finish = output.get("finish_reason")
+            if not text_only and finish != "stop":
+                parsed.update(status="unparsed", domain=None, subtopic=None,
+                              rationale="Judge reached its output-token limit." if finish == "length"
+                              else "Judge generation did not finish normally.")
+            labels.append({"hash": key, **parsed, "prompt_tokens": len(ids),
+                           "finish_reason": finish, "stop_reason": output.get("stop_reason"),
+                           "output_tokens": output.get("output_tokens"),
+                           "truncated": None if finish is None else finish == "length"})
     return sorted(labels, key=lambda row: row["hash"])
 
 
 def run(args, model_loader=load_judge, revision_resolver=resolve_revision):
+    selection.validate_quota(args.per_domain)
     source_path = Path(args.convs)
     source_manifest_path = Path(str(source_path) + ".manifest.json")
     source_manifest = json.loads(source_manifest_path.read_bytes())
@@ -84,13 +122,16 @@ def run(args, model_loader=load_judge, revision_resolver=resolve_revision):
     audit_path = run_dir / "selection.audit.jsonl"
     manifest_path = run_dir / "selected.manifest.json"
     config = {key: getattr(args, key) for key in ("min_turns", "max_turns", "per_domain", "seed")}
-    judge = {"model": MODEL, "requested_revision": args.model_revision, "context_limit": args.context_limit, "output_tokens": args.output_tokens, "temperature": 0, "seed": 0, "dtype": "bfloat16", "runtime": runtime_versions()}
+    config.update(target_per_subtopic=args.per_domain / 5, stratification="best_effort_subtopics")
+    judge = {"model": MODEL, "requested_revision": args.model_revision, "context_limit": args.context_limit, "output_tokens": args.output_tokens, "temperature": 0, "seed": 0, "dtype": "bfloat16", "structured_outputs": {"json": selection.LABEL_SCHEMA}, "runtime": runtime_versions()}
     identity = {
         "candidates_sha256": selection.file_checksum(source_path),
         "candidate_manifest_sha256": selection.file_checksum(source_manifest_path),
         "selection": config, "judge": judge,
         "policy_version": selection.POLICY_VERSION,
         "policy_sha256": selection.checksum(selection.POLICY.encode()),
+        "taxonomy": selection.taxonomy_metadata(),
+        "selection_strategy": selection.selection_strategy_metadata(),
         "code": selection.code_hashes(__file__, selection.__file__),
     }
     with selection.selection_lock(run_dir / ".selection.lock"):
@@ -110,6 +151,8 @@ def run(args, model_loader=load_judge, revision_resolver=resolve_revision):
             "candidate_provenance": source_manifest,
             "judge": {**judge, "revision": revision, "policy_version": selection.POLICY_VERSION, "policy_sha256": identity["policy_sha256"]},
             "selection": config, "counts": counts, "review_status": "unreviewed",
+            "taxonomy": identity["taxonomy"],
+            "selection_strategy": identity["selection_strategy"],
             "selected_sha256": selection.checksum(selected_raw),
             "labels_sha256": selection.checksum(labels_raw),
             "audit_sha256": selection.checksum(audit_raw),
@@ -127,16 +170,16 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("convs")
     parser.add_argument("run_dir")
-    parser.add_argument("--per-domain", type=int, required=True)
+    parser.add_argument("--per-domain", type=int, default=100, help="positive domain quota; balance available subtopics, then broad domain cases")
     parser.add_argument("--min-turns", type=int, default=3)
-    parser.add_argument("--max-turns", type=int, default=12)
+    parser.add_argument("--max-turns", type=int, default=15)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--model-revision", default="main", help="resolved once; the saved exact revision is reused")
     parser.add_argument("--context-limit", type=int, default=16384)
     parser.add_argument("--output-tokens", type=int, default=256)
     args = parser.parse_args(argv)
     if args.per_domain <= 0 or not 1 <= args.min_turns <= args.max_turns:
-        parser.error("require per-domain > 0 and 1 <= min-turns <= max-turns")
+        parser.error("require positive per-domain and 1 <= min-turns <= max-turns")
     if not 0 < args.output_tokens < args.context_limit:
         parser.error("require 0 < output-tokens < context-limit")
     run(args)
