@@ -7,6 +7,8 @@ paper's figure images.
   Axis projection by turn for our real WildChat chats (the same 76 chats at
   every turn, 95% CI band), with the paper's coding conversations (mean over
   its three simulated users, digitized into paper_fig25.json) in light grey.
+- drift_swechat: the same, plus real coding-agent sessions from SWE-chat (the
+  251 of 300 that fit the context window at every turn) in red.
 - harm_vs_drift_roles, harm_vs_drift_real (the paper's Fig. 8 style): one dot
   per opening, harmful rate over its 40 CategoricalHarmfulQA questions against
   the opening's projection. Rates move in steps of 1/40, so dots get a small
@@ -92,16 +94,20 @@ def card_figure(size):
     return fig
 
 
-def fig_drift(res, out):
+def complete_chats(path, turns):
+    """Projection by turn for each chat that has every turn in `turns`."""
     by_chat = collections.defaultdict(dict)
-    for r in read(os.path.join(res, "drift_turns", "projections.jsonl")):
+    for r in read(path):
         if r["proj"] is not None:
             by_chat[r["hash"]][r["k"]] = r["proj"]
+    return [c for c in by_chat.values() if all(k in c for k in turns)]
+
+
+def fig_drift(res, out, name, series):
+    """series: (run dir under res, legend label with {n}, color) per line."""
     turns = list(range(1, 13))
-    chats = [c for c in by_chat.values() if all(k in c for k in turns)]
     coding = [v for (d, _), v in paper_fig25().items() if d == "coding"]
     paper = [np.mean([c[t] for c in coding]) for t in range(15)]
-    bands = [ci([c[k] for c in chats], np.mean) for k in turns]
     fig = card_figure((7, 4.6))
     ax = fig.add_axes([0.13, 0.17, 0.8, 0.74])
     ax.set_facecolor("none")
@@ -114,23 +120,28 @@ def fig_drift(res, out):
         lw=1.5,
         label="Paper's coding chats (simulated users)",
     )
-    ax.fill_between(
-        turns,
-        [b[0] for b in bands],
-        [b[1] for b in bands],
-        color=BLUE,
-        alpha=0.15,
-        lw=0,
-    )
-    ax.plot(
-        turns,
-        [np.mean([c[k] for c in chats]) for k in turns],
-        "-o",
-        color=BLUE,
-        ms=4,
-        lw=1.5,
-        label=f"Real WildChat chats (n = {len(chats)})",
-    )
+    for run, label, color in series:
+        chats = complete_chats(
+            os.path.join(res, run, "projections.jsonl"), turns
+        )
+        bands = [ci([c[k] for c in chats], np.mean) for k in turns]
+        ax.fill_between(
+            turns,
+            [b[0] for b in bands],
+            [b[1] for b in bands],
+            color=color,
+            alpha=0.15,
+            lw=0,
+        )
+        ax.plot(
+            turns,
+            [np.mean([c[k] for c in chats]) for k in turns],
+            "-o",
+            color=color,
+            ms=4,
+            lw=1.5,
+            label=label.format(n=len(chats)),
+        )
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
     for side in ("left", "bottom"):
@@ -145,7 +156,7 @@ def fig_drift(res, out):
         "Assistant Axis Projection", color=AXIS, fontweight="bold", labelpad=10
     )
     ax.legend(frameon=False, fontsize=9.5, loc="lower left", labelcolor=LABEL)
-    save(fig, out, "drift_real_chats")
+    save(fig, out, name)
 
 
 def openings_by_hash(stems, res):
@@ -366,7 +377,17 @@ def main():
     os.makedirs(out, exist_ok=True)
     for old in os.listdir(out):
         os.remove(os.path.join(out, old))
-    fig_drift(res, out)
+    wildchat = ("drift_turns", "Real WildChat chats (n = {n})", BLUE)
+    fig_drift(res, out, "drift_real_chats", [wildchat])
+    fig_drift(
+        res,
+        out,
+        "drift_swechat",
+        [
+            wildchat,
+            ("swechat", "Real SWE-chat coding sessions (n = {n})", RED),
+        ],
+    )
     fig_harm(res, out, "harm_vs_drift_roles", ["roles_q2/harm_wild"], True)
     fig_harm(
         res,
@@ -380,7 +401,7 @@ def main():
         False,
     )
     fig_capping(res, out)
-    print(f"wrote 4 figures to {out}")
+    print(f"wrote 5 figures to {out}")
 
 
 if __name__ == "__main__":
