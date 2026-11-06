@@ -68,7 +68,7 @@ def test_shell_workflows_use_existing_modules():
 
     for path in (WILD_ROOT / "scripts").glob("*.sh"):
         subprocess.run(["bash", "-n", str(path)], check=True)
-        modules = re.findall(r"\$PY\s+-m\s+(wild\.[\w.]+)", path.read_text())
+        modules = re.findall(r'(?:\$(?:PY|py)|"\$(?:PY|py)")\s+(?:-u\s+)?-m\s+(wild\.[\w.]+)', path.read_text())
         assert modules, path
         for module in modules:
             assert importlib.util.find_spec(module) is not None, (path, module)
