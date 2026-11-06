@@ -36,8 +36,8 @@ DOMAINS = [
     "therapy",
     "ai",
 ]  # The paper's four drift domains.
-# Score user turns 1..12 (the paper's simulated conversations ran about this
-# long).
+# Historical workflows retain a twelve-turn cap. Protected drift runs take
+# their horizon from the frozen selection manifest (fifteen for the new protocol).
 MAX_TURN = 12
 MAX_MODEL_LEN = 16384
 MAX_NEW_TOKENS = 1024

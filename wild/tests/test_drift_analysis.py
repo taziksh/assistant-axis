@@ -151,6 +151,46 @@ def test_adding_more_replies_does_not_add_independent_conversations():
     assert (point(summary)["ci_low"], point(summary)["ci_high"]) == (1, 9)
 
 
+def test_plot_threshold_is_ten_conversations_with_raw_estimates_retained():
+    data = records({str(index): ("coding", [[index] * 3] * (2 if index < 9 else 1)) for index in range(10)})
+    settings = config()
+    summary, cohorts = analysis.summarize(data[0], analysis.conversation_turns(*data, settings), settings)
+    for metric in ("projection", "change"):
+        rows = [point(summary, metric=metric, turn=k) for k in (1, 2)]
+        assert [row["n_conversations"] for row in rows] == [10, 9]
+        assert [row["plot_eligible"] for row in rows] == [True, False]
+        assert rows[1]["mean"] is not None
+        for field in ("mean", "ci_low", "ci_high"):
+            visible = analysis.plot_values(rows, field)
+            assert visible[0] == rows[0][field]
+            assert np.isnan(visible[1])
+        # 27 replies at the second turn still provide only nine independent conversations.
+        assert len(cohorts["coding"]) == 9
+        assert not point(summary, cohort="fixed", metric=metric)["plot_eligible"]
+
+
+def test_renderer_keeps_counts_below_threshold_and_masks_estimate_curves(tmp_path, monkeypatch):
+    import matplotlib.axes
+
+    data = records({str(index): ("coding", [[index] * 3] * (2 if index < 9 else 1)) for index in range(10)})
+    summary, cohorts = analysis.summarize(data[0], analysis.conversation_turns(*data, config()), config())
+    captured, original = [], matplotlib.axes.Axes.plot
+
+    def record_plot(ax, x, y, *args, **kwargs):
+        if kwargs.get("label", "").startswith("Coding"):
+            captured.append(np.asarray(y))
+        return original(ax, x, y, *args, **kwargs)
+
+    monkeypatch.setattr(matplotlib.axes.Axes, "plot", record_plot)
+    analysis.render_plots(summary, cohorts, 2, tmp_path)
+    assert len(captured) == 6
+    assert captured[0][0] == 4.5
+    assert captured[1][0] == 0
+    assert all(np.isnan(values[1]) for values in captured[:2])
+    assert all(values.tolist() == [10, 9] for values in captured[2:4])
+    assert all(np.isnan(values).all() for values in captured[4:])
+
+
 def test_run_writes_actual_plot_files_tables_and_honest_report(tmp_path, monkeypatch):
     data = records({
         "code": ("coding", [[1, 2, 3], [2, 3, 4]]),
@@ -179,6 +219,12 @@ def test_run_writes_actual_plot_files_tables_and_honest_report(tmp_path, monkeyp
     assert "unreviewed" in report
     assert "not describe an autonomous Llama conversation" in report
     assert "pointwise intervals" in report
+    assert "insufficient n" in report
+    assert result["plot_policy"]["min_valid_conversations"] == 10
+    assert "Insufficient n" in (output / "fixed_cohort.svg").read_text()
+    raw_summaries = list(csv.DictReader((output / "summary.csv").open()))
+    assert all(row["plot_eligible"] == "False" for row in raw_summaries)
+    assert any(row["mean"] for row in raw_summaries)
 
 
 def test_incomplete_run_fails_before_creating_analysis_outputs(tmp_path, monkeypatch):

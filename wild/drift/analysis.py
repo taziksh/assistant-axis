@@ -17,6 +17,7 @@ LABELS = {"coding": "Coding", "writing": "Writing", "therapy": "Emotional disclo
 COLORS = {"coding": "#0072B2", "writing": "#009E73", "therapy": "#E69F00", "ai": "#CC79A7"}
 BOOTSTRAP_DRAWS = 2000
 BOOTSTRAP_SEED = 0
+MIN_PLOT_CONVERSATIONS = 10
 
 
 def indexed_samples(rows):
@@ -101,6 +102,7 @@ def trajectory_summary(values, draws=BOOTSTRAP_DRAWS, seed=BOOTSTRAP_SEED):
         low, high = np.percentile(valid_draws, [2.5, 97.5]) if interval else (None, None)
         result.append({
             "turn": k + 1, "n_conversations": int(counts[k]),
+            "plot_eligible": bool(counts[k] >= MIN_PLOT_CONVERSATIONS),
             "mean": float(means[k]) if counts[k] else None,
             "ci_low": float(low) if interval else None,
             "ci_high": float(high) if interval else None,
@@ -142,6 +144,11 @@ def write_csv(path, rows, fields):
     run_state.atomic_write(path, stream.getvalue().encode())
 
 
+def plot_values(rows, field):
+    """Mask means and bands by conversation count without changing raw estimates."""
+    return [row[field] if row["n_conversations"] >= MIN_PLOT_CONVERSATIONS and row[field] is not None else np.nan for row in rows]
+
+
 def render_plots(summaries, cohorts, horizon, out):
     import matplotlib
     matplotlib.use("Agg")
@@ -153,15 +160,20 @@ def render_plots(summaries, cohorts, horizon, out):
     def curve(ax, domain, cohort, metric, counts=False):
         rows = series(domain, cohort, metric)
         x = [r["turn"] for r in rows]
-        y = [r["n_conversations"] if counts else r["mean"] if r["mean"] is not None else np.nan for r in rows]
+        y = [r["n_conversations"] for r in rows] if counts else plot_values(rows, "mean")
         label = LABELS[domain]
         if cohort == "fixed":
             label += f" (n={len(cohorts[domain])})"
+            if len(cohorts[domain]) < MIN_PLOT_CONVERSATIONS:
+                label += "; insufficient n"
         ax.plot(x, y, marker="o", markersize=3, color=COLORS[domain], label=label)
         if not counts:
-            low = [r["ci_low"] if r["ci_low"] is not None else np.nan for r in rows]
-            high = [r["ci_high"] if r["ci_high"] is not None else np.nan for r in rows]
+            low = plot_values(rows, "ci_low")
+            high = plot_values(rows, "ci_high")
             ax.fill_between(x, low, high, color=COLORS[domain], alpha=0.16)
+
+    def insufficient(ax, text):
+        ax.text(0.5, 0.5, text, transform=ax.transAxes, ha="center", va="center", zorder=10, bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.95})
 
     def finish(fig, axes, name, note):
         for ax in np.atleast_1d(axes).flat:
@@ -177,7 +189,7 @@ def render_plots(summaries, cohorts, horizon, out):
             fig.savefig(out / f"{name}.{extension}", dpi=200, bbox_inches="tight")
         plt.close(fig)
 
-    band_note = "Bands: 95% bootstrap over conversations. Intervals are omitted when fewer than two conversations contribute."
+    band_note = f"Points and bands require at least {MIN_PLOT_CONVERSATIONS} valid conversations per turn. Bands: 95% conversation bootstrap."
     for metric, name, ylabel in (
         ("projection", "projection_by_turn", "Assistant Axis projection"),
         ("change", "change_from_first_turn", "Change from turn 1"),
@@ -187,6 +199,8 @@ def render_plots(summaries, cohorts, horizon, out):
             curve(ax, domain, "available", metric)
         if metric == "change":
             ax.axhline(0, color="gray", linewidth=0.7)
+        if not any(r["n_conversations"] >= MIN_PLOT_CONVERSATIONS for domain in DOMAINS for r in series(domain, "available", metric)):
+            insufficient(ax, f"Insufficient n: fewer than {MIN_PLOT_CONVERSATIONS} valid conversations at every turn")
         ax.set_ylabel(ylabel)
         finish(fig, ax, name, band_note)
 
@@ -207,9 +221,9 @@ def render_plots(summaries, cohorts, horizon, out):
         ax.set_ylabel(ylabel)
         if metric == "change":
             ax.axhline(0, color="gray", linewidth=0.7)
-        if not any(cohorts.values()):
-            ax.text(0.5, 0.5, f"No complete conversations through turn {horizon}", transform=ax.transAxes, ha="center", va="center")
-    finish(fig, axes, "fixed_cohort", f"Same conversations at every turn, complete through turn {horizon}. " + band_note)
+        if all(len(ids) < MIN_PLOT_CONVERSATIONS for ids in cohorts.values()):
+            insufficient(ax, f"Insufficient n: no category has {MIN_PLOT_CONVERSATIONS} complete\nconversations through turn {horizon}")
+    finish(fig, axes, "fixed_cohort", f"Same conversations at every turn, complete through turn {horizon}.\n" + band_note)
 
 
 def write_report(out, result):
@@ -220,16 +234,19 @@ def write_report(out, result):
         "Each response was regenerated from the original recorded conversation prefix. Later turns retain the original assistant history; these trajectories do not describe an autonomous Llama conversation built from its own earlier replies.", "",
         f"Each conversation/turn averages all {result['samples_per_turn']} requested replies before conversations receive equal weight. Turns with any unmeasurable reply are excluded from the primary mean. Changes subtract that conversation's turn-one mean; a missing turn-one mean excludes it from change estimates.", "",
         f"Confidence intervals use {BOOTSTRAP_DRAWS:,} bootstrap resamples of whole conversations within each category, with seed {BOOTSTRAP_SEED}. The same resampled conversation IDs are used across turns. These are pointwise intervals, not a simultaneous test of the full trajectory. Fewer than two contributing conversations gives no interval.", "",
-        f"The fixed cohort contains conversations with every turn measurable through turn {result['max_turns']}. Empty categories remain visible; the cutoff is not shortened to obtain a result.", "",
-        "| Category | Selected | Fixed cohort | Unmeasurable turns | Ungenerated turns | Truncated replies |",
-        "|---|---:|---:|---:|---:|---:|",
+        f"Projection and change figures omit points and bands with fewer than {MIN_PLOT_CONVERSATIONS} valid conversations, after averaging replies within each conversation/turn. Three replies from one conversation still count as one conversation. Counts and raw table estimates remain available below this plotting threshold. Matching the paper's conversation count is not a power calculation or evidence of a safety effect.", "",
+        f"The fixed cohort contains conversations with every turn measurable through turn {result['max_turns']}, the frozen selection horizon. Categories with fewer than {MIN_PLOT_CONVERSATIONS} complete conversations are marked insufficient n; the cutoff is not shortened to obtain a result.", "",
+        "| Category | Selected | Fixed cohort | Fixed cohort status | Unmeasurable turns | Ungenerated turns | Truncated replies |",
+        "|---|---:|---:|---|---:|---:|---:|",
     ]
     for domain in DOMAINS:
         counts = result["counts"][domain]
-        lines.append(f"| {LABELS[domain]} | {counts['selected_conversations']} | {len(result['fixed_cohort_ids'][domain])} | {counts['unmeasurable_turns']} | {counts['ungenerated_turns']} | {counts['truncated_replies']} |")
+        fixed_n = len(result["fixed_cohort_ids"][domain])
+        fixed_status = "plotted" if fixed_n >= MIN_PLOT_CONVERSATIONS else "insufficient n"
+        lines.append(f"| {LABELS[domain]} | {counts['selected_conversations']} | {fixed_n} | {fixed_status} | {counts['unmeasurable_turns']} | {counts['ungenerated_turns']} | {counts['truncated_replies']} |")
     lines.extend([
         "", "Generated replies that reach the length limit remain in the primary analysis and are counted above. Later turns can have a different mix of conversations; compare the available-conversation and fixed-cohort figures before interpreting an apparent trend.", "",
-        "The figures are `projection_by_turn`, `change_from_first_turn`, `conversation_counts`, and `fixed_cohort`, each in PNG and SVG. `conversation_turns.csv` contains the averaged measurements and exclusions; `summary.csv` contains the plotted means, intervals, and counts.", "",
+        "The figures are `projection_by_turn`, `change_from_first_turn`, `conversation_counts`, and `fixed_cohort`, each in PNG and SVG. `conversation_turns.csv` contains the averaged measurements and exclusions; `summary.csv` contains all raw means, intervals, counts, and a `plot_eligible` flag, including estimates omitted from figures.", "",
     ])
     run_state.atomic_write(out / "REPORT.md", "\n".join(lines).encode())
 
@@ -258,6 +275,7 @@ def run_analysis(run_dir):
             "samples_per_turn": config["samples_per_turn"], "max_turns": config["max_turns"],
             "model": config["model"], "layer": config["layer"],
             "bootstrap": {"draws": BOOTSTRAP_DRAWS, "seed": BOOTSTRAP_SEED, "unit": "conversation", "interval": "pointwise percentile 95%"},
+            "plot_policy": {"min_valid_conversations": MIN_PLOT_CONVERSATIONS, "unit": "conversation", "raw_estimates_retained": True},
             "counts": counts, "fixed_cohort_ids": cohorts, "summary": summaries,
             "projections_sha256": run_state.checksum((run_dir / "projections.jsonl").read_bytes()),
             "analysis_code_sha256": run_state.checksum(Path(__file__).read_bytes()),
@@ -269,7 +287,7 @@ def run_analysis(run_dir):
             "truncated_samples", "status", "projection", "change_from_turn1",
         ])
         write_csv(out / "summary.csv", summaries, [
-            "domain", "cohort", "metric", "turn", "n_conversations", "mean", "ci_low", "ci_high", "bootstrap_valid_draws",
+            "domain", "cohort", "metric", "turn", "n_conversations", "plot_eligible", "mean", "ci_low", "ci_high", "bootstrap_valid_draws",
         ])
         render_plots(summaries, cohorts, config["max_turns"], out)
         write_report(out, result)
