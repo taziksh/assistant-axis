@@ -10,13 +10,20 @@ The previous successful smoke only verifies its old code and candidate fingerpri
 
 Review the update and run local tests. The revised target is 100 conversations in each of four domains, up to fifteen original exchanges, with three sampled replies at each turn. The paper uses that conversation count and horizon, but the count is not a power calculation and three replies are not independent conversations.
 
-The existing 8,284-candidate pool contains only the first twelve exchanges from three source files. It cannot support an honest fifteen-turn experiment by changing a flag. Prepare a new candidate pool from the original pinned source, following the bounded twelve-file example in [selection.md](selection.md). That command uses a reproducible subset across the full pinned listing, small Arrow batches, at most two workers, and up to 8,000 non-keyword candidates. It has not been run as part of these changes.
+The prepared `wild/data/drift_candidates_v3.jsonl` contains 17,461 original three-to-fifteen-exchange windows from ten pinned source files. It reuses the verified local source collection and excludes all 154 previously reviewed conversations, including the frozen reference set. All remaining eligible windows are included; keyword fields are retrieval hints and do not determine inclusion. Its manifest records this source-reuse design and every exclusion. The older 8,284-candidate pool only retained twelve exchanges and remains unchanged. The twelve-file command in [selection.md](selection.md) is an alternative future collection recipe, not the provenance of this prepared pool.
 
 The separate local validation-source collection uses ten fresh pinned files and preserves original windows up to fifteen turns. Its results and exact coverage are recorded in `wild/results/selection_validation_v3/SOURCE_REPORT.md`. That reference-building source artifact is separate from the production candidate pool expected by `pilot.sh`; it does not claim a selected 400-conversation study cohort.
 
 After collection, inspect the manifest's source paths, coverage, turn window, filter/deduplication counts, and retrieval distribution. Fresh validation references use original windows up to fifteen turns, with deliberate searches for genuine therapy and AI positives and actual turns 13–15. Check their achieved coverage and unresolved shortages in `wild/results/selection_validation_v3/readiness.json`; a fifteen-turn setting alone does not establish long-window coverage. The older audited references cover only their original twelve-turn windows. Do not select only long conversations or extreme emotional/philosophical examples to obtain a full-looking late-turn curve.
 
-When ready for a future pod session, transfer the reviewed code, fresh candidate JSONL and both sidecars, and local validation references with their manifest, exact source artifact, and exclusion artifact at the relative paths recorded in that manifest. An older update archive is stale after these changes; build and inspect a new archive before transfer. No archive or upload is assumed complete here. The helper installs nothing and manages no pod lifecycle.
+For the next user-run pod session, transfer `wild/data/palaestra-selection-v3-run-ready.tar.gz` (code and compact validation references) and `wild/data/palaestra-candidates-v3.tar.gz` (the prepared pool and provenance). Both archives were checked locally; neither has been uploaded. Extract them from `/workspace/palaestra`, then verify `SELECTION_V3_UPDATE.sha256` and `wild/data/CANDIDATES_V3.sha256` before running the stages below. Keep earlier archives and outputs. The helper installs nothing and manages no pod lifecycle.
+
+```bash
+tar -xzf palaestra-selection-v3-run-ready.tar.gz
+tar -xzf palaestra-candidates-v3.tar.gz
+sha256sum --check --quiet SELECTION_V3_UPDATE.sha256
+sha256sum --check --quiet wild/data/CANDIDATES_V3.sha256
+```
 
 ## 1. Run a fresh GPU smoke
 

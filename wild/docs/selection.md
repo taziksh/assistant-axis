@@ -8,9 +8,11 @@
 |---|---|---|
 | Target per domain | 10 conversations | 100 per domain, 400 total; aim for 20 in each of five proposed subtopics |
 | Retained window | Initial 3–12 exchanges | Initial 3–15 exchanges |
-| Source coverage | First 3 of 86 pinned files | Seeded subset of 12 pinned files in the bounded example below |
-| Retrieval | Therapy/AI keywords plus up to 8,000 others | Corrected keyword word forms plus up to 8,000 others |
+| Source coverage | First 3 of 86 pinned files | Ten fresh pinned files in the prepared pool; optional twelve-file recipe below |
+| Retrieval | Therapy/AI keywords plus up to 8,000 others | All eligible unreviewed windows in the prepared pool; corrected keyword forms available for future collection |
 | Classification | Earlier topic policy and output parsing | Full-window task policy, structured JSON, explicit invalid/truncated outputs |
+
+The actual prepared `drift_candidates_v3.jsonl` reuses ten already verified local source shards: 17,615 eligible windows minus all 154 previously reviewed conversations gives 17,461 candidates. It includes all remaining windows without keyword subsampling and preserves the original three-to-fifteen-exchange histories. This differs from the optional twelve-file/8,000-other recipe below; the prepared manifest records its source-reuse policy, input hashes, and exclusions. Its reproducible export script is `wild/results/setup/prepare_candidates_v3.py`. No new model classifications or study selections have been run on this pool.
 
 The [paper's persona-drift experiment](https://arxiv.org/html/2601.10387v1#S4.SS1) uses 100 conversations per domain and up to fifteen turns. Matching those settings is not a power calculation. The five observable request subtopics here are a real-data adaptation chosen to impose content diversity; they do not reproduce the paper's five user personas crossed with twenty topics. We do not infer user personas from WildChat. Our single-model, real-history sample also differs from its synthetic conversations, three target models, and three user-auditor models. The three sampled replies per turn in this project are not three user auditors.
 
