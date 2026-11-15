@@ -1,6 +1,7 @@
 """Compare judge models against the hand labels on identical reply sets.
 
-Usage: compare_judges.py   (paths are relative to this file)
+Usage: compare_judges.py [--results-dir DIR] [--labels FILE] [--judge NAME=PREFIX ...]
+Defaults reproduce the Llama analysis; paths default relative to this file.
 For each judge's two-axis output on the 96 hand-labeled replies
 (results_docent/spotcheck/two_axis*.{act-v1,harm-v2}.jsonl), prints coverage
 and cost, agreement and Cohen's kappa with the hand labels per axis and on
@@ -8,22 +9,29 @@ corrected harm (actionable AND harmful), on the replies all judges answered,
 judge-vs-judge kappa, and kappa by jailbreak set. No confidence intervals;
 judge_irr.py has those. Edit JUDGES to add or drop a judge.
 """
-import collections, json, os, random, sys
+import argparse, collections, json, os, random, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 WILD = os.path.dirname(os.path.dirname(HERE))  # wild/: shared modules (judge_paper, wcommon, tables, figures, jbsets) and local data.
 sys.path.insert(0, WILD)
 sys.path.insert(0, HERE)
 import judge_two_axis as t
 
-S = os.path.join(WILD, "results_docent", "spotcheck")
+ap = argparse.ArgumentParser(description="Compare judge models against the hand labels; see the module docstring.")
+ap.add_argument("--results-dir", default=os.path.join(WILD, "results_docent"))
+ap.add_argument("--labels", default=None, help="hand labels; default RESULTS_DIR/spotcheck/christian_labels.jsonl")
+ap.add_argument("--judge", action="append", metavar="NAME=PREFIX",
+                help="two-axis output prefix relative to RESULTS_DIR/spotcheck (repeatable)")
+args = ap.parse_args()
+S = os.path.join(args.results_dir, "spotcheck")
 H = t.HARMFUL
-labs = {r["key"]: r for r in (json.loads(l) for l in open(f"{S}/christian_labels.jsonl"))}
+labs = {r["key"]: r for r in (json.loads(l) for l in open(args.labels or f"{S}/christian_labels.jsonl"))}
 items = {it["key"]: it for it in (json.loads(l) for l in open(f"{S}/items.jsonl"))}
 yn = ("yes", "no")
 sure = [k for k, L in labs.items() if L["actionable"] in yn and L["harmful"] in yn]
 hum = lambda L: L["actionable"] == "yes" and L["harmful"] == "yes"
-JUDGES = {"DeepSeek V3.2": "two_axis", "Opus 5.5": "two_axis_opus",
-          "Kimi K3": "two_axis_kimi", "GPT-6.1 Sol": "two_axis_sol"}
+JUDGES = (dict(x.split("=", 1) for x in args.judge) if args.judge else
+          {"DeepSeek V3.2": "two_axis", "Opus 5.5": "two_axis_opus",
+           "Kimi K3": "two_axis_kimi", "GPT-6.1 Sol": "two_axis_sol"})
 
 def raw(prefix):
     out = {}
@@ -35,7 +43,7 @@ def raw(prefix):
 data = {n: raw(p) for n, p in JUDGES.items()}
 merged = {n: t.merged(f"{S}/{p}") for n, p in JUDGES.items() if data[n]["act"]}
 
-print("## Coverage and cost (96 replies, 192 calls per judge)\n")
+print(f"## Coverage and cost ({len(items)} replies, {2 * len(items)} calls per judge)\n")
 print("| Judge | Answered both axes | Refused | Unparseable / errors | Reasoning tokens | Cost |")
 print("|---|---|---|---|---|---|")
 for n, d in data.items():
@@ -64,11 +72,13 @@ def block(title, names, keys):
     o = [(items[k]["judge"]["score"] in H, hum(labs[k])) for k in keys]
     print(f"| Original paper judge | — | — | {sum(x == y for x, y in o) / len(o):.1%} / {t.kappa(o):.2f} |")
 
-no_opus = [n for n in merged if n != "Opus 5.5"]
+# Judges that answered at least 90% of replies (on Llama this leaves out Opus and its refusals).
+no_opus = [n for n in merged if len(merged[n]) >= 0.9 * len(items)]
 common3 = [k for k in sure if all(k in merged[n] for n in no_opus)]
-block("Without Opus: replies answered by DeepSeek, Kimi and Sol", no_opus, common3)
-common4 = [k for k in sure if all(k in merged[n] for n in merged)]
-block("All four judges: replies none of them refused", list(merged), common4)
+block(f"Judges answering at least 90% of replies ({', '.join(no_opus)}): replies all of them answered", no_opus, common3)
+if len(no_opus) < len(merged):
+    common4 = [k for k in sure if all(k in merged[n] for n in merged)]
+    block(f"All {len(merged)} judges: replies none of them refused", list(merged), common4)
 
 print("\n## Judge vs judge on corrected harm (κ, replies both answered)\n")
 names = list(merged)
@@ -83,11 +93,13 @@ for a in names:
         cells.append("—" if a == b else f"{t.kappa(p):.2f}")
     print(f"| {a} | " + " | ".join(cells) + " |")
 
-print("\n## Corrected-harm κ vs you by set (replies answered by DeepSeek, Kimi and Sol)\n")
+print(f"\n## Corrected-harm κ vs you by set (replies answered by {', '.join(no_opus)})\n")
 print("| Set | n | " + " | ".join(no_opus) + " |")
 print("|---|---|" + "---|" * len(no_opus))
 for st in ("DAN", "MHJ", "Shah"):
     ks = [k for k in common3 if items[k]["set_label"] == st]
+    if not ks:
+        continue
     cells = []
     for n in no_opus:
         m = merged[n]

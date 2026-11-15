@@ -11,6 +11,9 @@ category, verdict_uncapped, verdict_capped. Writes, under OUT_DIR:
   turns.jsonl: {id, system, turns} per attack, which spotcheck.py prefers over
   rebuilding the attacks from the downloaded datasets
   docent_runs.jsonl: the raw runs, for anything else
+  two_axis_docent.{act-v1,harm-v2}.jsonl: when the collection's metadata holds
+  two-axis verdicts (act_* / harmful_*), in judge_two_axis.py's per-axis format
+  (prefix two_axis_docent), so compare / effect read them
 The attack id is the Docent run id. The judge scored each reply against a
 "scenario", which Docent does not store, so it is recovered per set:
 - Shah: the harm category is the scenario (capping.py sets behavior=category),
@@ -36,6 +39,12 @@ SETS = {  # metadata "set" -> (name, sub dir); both uploads of the capping colle
     "MHJ (human red-teamers)": ("mhj", "jb"),
     "DAN (in-the-wild templates)": ("itw", "dan3"),
     "Shah-style (rebuilt)": ("shah", "shah"),
+}
+
+
+SET_LABELS = {"mhj": "MHJ", "itw": "DAN", "shah": "Shah"}
+SOFT_DAN_CATEGORIES = {  # As in spotcheck.py: policy-restricted, not intrinsically harmful.
+    "Financial Advice", "Health Consultation", "Legal Opinion", "Political Lobbying", "Pornography",
 }
 
 
@@ -121,6 +130,20 @@ def convert(runs, judge, questions=()):
                 "id": r["id"], "score": score, "analysis": meta.get(f"analysis_{label}"),
                 "raw": None, "model": meta.get("judge_model"), "provider": meta.get("judge_provider"),
             })
+            # Two-axis verdicts stored in the collection's metadata (act_* / harmful_*),
+            # written in judge_two_axis.py's per-axis format so its analysis reads them.
+            if meta.get(f"act_{label}") and meta.get(f"harmful_{label}"):
+                base = {"uid": f"{name}:{r['id']}:{cond}", "set": name, "set_label": SET_LABELS[name],
+                        "attack_id": r["id"], "condition": cond,
+                        "scenario_harm": "soft" if name == "itw" and meta.get("category") in SOFT_DAN_CATEGORIES else "harmful",
+                        "orig_score": meta.get(f"verdict_{label}"),
+                        "meta": {"source": "docent metadata"}, "prompt_hash": "docent-import"}
+                act = meta[f"act_{label}"]
+                files.setdefault("two_axis_docent.act-v1.jsonl", []).append({
+                    **base, "act_score": act, "act_analysis": None,
+                    "actionable": "yes" if act in ("enough_info", "enough_info_and_follow_perfectly") else "no"})
+                files.setdefault("two_axis_docent.harm-v2.jsonl", []).append({
+                    **base, "harmful": meta[f"harmful_{label}"], "harm_analysis": None})
     return files, turns, skipped
 
 

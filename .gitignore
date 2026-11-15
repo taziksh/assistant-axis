@@ -58,3 +58,6 @@ wild/results_docent_fetch.log
 wild/results_docent_full/
 wild/results_docent_harm/
 wild/figures_two_axis/
+wild/results_docent_qwen/
+wild/results_docent_domains/
+wild/figures_two_axis_qwen/

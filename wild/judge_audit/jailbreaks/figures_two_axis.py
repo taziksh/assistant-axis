@@ -1,6 +1,7 @@
 """The capping figure for the two-axis judges, in the paper's Fig. 10 style.
 
-Usage: figures_two_axis.py [RESULTS_DIR] [OUT_DIR]
+Usage: figures_two_axis.py [RESULTS_DIR] [OUT_DIR] [--title T] [--orig-judge v3.2|v3]
+       [--row 'LABEL=PREFIX' ...]   (PREFIX 'original' for the original judge)
   defaults: wild/results_docent (spotcheck_docent.py layout plus the
   two_axis*.{act-v1,harm-v2}.jsonl judge outputs), wild/figures_two_axis
 Writes capping_two_axis.{png,svg}: one row per judge, harmful rate on the three
@@ -22,6 +23,7 @@ FIG_FONT_DIR to a folder of .ttf files (e.g. Arimo, metrically equal to Arial)
 on machines that have none of them.
 """
 
+import argparse
 import glob
 import hashlib
 import json
@@ -53,6 +55,8 @@ ROWS = [  # (row label, two-axis output prefix or None for the original judge)
     ("GPT-6.1 Sol\ntwo-axis", "two_axis_sol"),
 ]
 YMAX = 0.70
+TITLE = "Llama 3.3 70B"
+ORIG_JUDGE = "v3.2"  # Original verdict files: judged_<ORIG_JUDGE>.jsonl (v3 for the Qwen run).
 
 
 logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)  # Fallbacks are expected.
@@ -85,6 +89,9 @@ def content_key(run):
 def mhj_behaviors(res):
     """Attack id (in the shared collection) -> HarmBench behavior."""
     full = os.path.join(os.path.dirname(res.rstrip("/")), "results_docent_full", "docent_runs.jsonl")
+    shared = os.path.join(res, "docent_runs.jsonl")
+    if not (os.path.exists(full) and os.path.exists(shared)):
+        return {}  # Not needed when the rows already carry exact behaviors.
     beh = {content_key(r): r["metadata"]["behavior"] for r in read_jsonl(full)}
     return {r["id"]: beh.get(content_key(r)) for r in read_jsonl(os.path.join(res, "docent_runs.jsonl"))}
 
@@ -95,8 +102,8 @@ def cluster_units(res):
     units = {}
     for _, sub, name in SETS:
         for r in read_jsonl(os.path.join(res, sub, "cap", f"{name}_none.jsonl")):
-            if name == "mhj":
-                units[(name, r["id"])] = mhj.get(r["id"]) or r["id"]
+            if name == "mhj":  # Exact behavior when the export kept it, else the fuller upload's.
+                units[(name, r["id"])] = (r["behavior"] if r.get("scenario_exact") else mhj.get(r["id"])) or r["id"]
             elif name == "itw":
                 units[(name, r["id"])] = r["behavior"]
             else:
@@ -114,7 +121,7 @@ def rates(res, prefix, units):
         have = lambda name, i, cond: f"{name}:{i}:{cond}" in m
     for label, sub, name in SETS:
         if prefix is None:
-            v = {c: {r["id"]: r["score"] for r in read_jsonl(os.path.join(res, sub, "cap", f"{name}_{c}.judged_v3.2.jsonl"))
+            v = {c: {r["id"]: r["score"] for r in read_jsonl(os.path.join(res, sub, "cap", f"{name}_{c}.judged_{ORIG_JUDGE}.jsonl"))
                      if r["score"]} for c in ("none", "capped")}
             ids = [i for i in v["none"] if i in v["capped"]]
             hits = [[float(v[c][i] in HARMFUL) for i in ids] for c in ("none", "capped")]
@@ -130,9 +137,11 @@ def draw(res, out):
     use_extra_fonts()
     units = cluster_units(res)
     data = [(label, rates(res, prefix, units)) for label, prefix in ROWS]
-    fig = F.card_figure((6.2, 8.2))
-    top, bottom, gap = 0.875, 0.11, 0.035
-    h = (top - bottom - gap * (len(ROWS) - 1)) / len(ROWS)
+    # Margins in inches (the 4-row layout's), so any number of rows gets the same spacing.
+    top_in, bottom_in, gap_in, row_in = 1.025, 0.902, 0.287, 1.353
+    height = top_in + bottom_in + len(ROWS) * row_in + (len(ROWS) - 1) * gap_in
+    fig = F.card_figure((6.2, height))
+    top, bottom, gap, h = 1 - top_in / height, bottom_in / height, gap_in / height, row_in / height
     w = 0.36
     for r, (label, rows) in enumerate(data):
         ax = fig.add_axes([0.17, top - (r + 1) * h - r * gap, 0.77, h])
@@ -157,18 +166,32 @@ def draw(res, out):
         ax.set_xlim(-0.6, len(SETS) - 0.4)
         ax.text(-0.07, 0.42, label, transform=ax.transAxes, rotation=90, ha="center", va="center",
                 color=F.AXIS, fontsize=11, fontweight="bold", linespacing=1.15)
-    fig.text(0.07, 0.925, "Llama 3.3 70B", color=F.AXIS, fontsize=12, fontweight="bold", va="center")
+    y_head = 1 - 0.615 / height
+    fig.text(0.07, y_head, TITLE, color=F.AXIS, fontsize=12, fontweight="bold", va="center")
     for x, color, text in ((0.52, F.RED, "Baseline"), (0.70, F.PINK, "Activation Capped")):
-        fig.patches.append(plt.Rectangle((x, 0.917), 0.022, 0.016, transform=fig.transFigure,
+        fig.patches.append(plt.Rectangle((x, y_head - 0.008 * 8.2 / height), 0.022, 0.131 / height, transform=fig.transFigure,
                                          color=color, zorder=5))
-        fig.text(x + 0.03, 0.925, text, color=F.AXIS, fontsize=10, va="center")
+        fig.text(x + 0.03, y_head, text, color=F.AXIS, fontsize=10, va="center")
     F.save(fig, out, "capping_two_axis", tight=False)
     return data
 
 
 def main():
-    res = sys.argv[1] if len(sys.argv) > 1 else os.path.join(WILD, "results_docent")
-    out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(WILD, "figures_two_axis")
+    global SETS, ROWS, TITLE, ORIG_JUDGE
+    ap = argparse.ArgumentParser(description="The capping figure for the two-axis judges; see the module docstring.")
+    ap.add_argument("results_dir", nargs="?", default=os.path.join(WILD, "results_docent"))
+    ap.add_argument("out_dir", nargs="?", default=os.path.join(WILD, "figures_two_axis"))
+    ap.add_argument("--title", default=TITLE)
+    ap.add_argument("--orig-judge", default=ORIG_JUDGE)
+    ap.add_argument("--row", action="append", metavar="LABEL=PREFIX",
+                    help="one row per flag; PREFIX relative to RESULTS_DIR, or 'original'; '\\n' in LABEL breaks the line")
+    args = ap.parse_args()
+    res, out = args.results_dir, args.out_dir
+    TITLE, ORIG_JUDGE = args.title, args.orig_judge
+    if args.row:
+        ROWS = [(lab.replace("\\n", "\n"), None if pre == "original" else pre)
+                for lab, pre in (x.split("=", 1) for x in args.row)]
+    SETS = [st for st in SETS if os.path.exists(os.path.join(res, st[1], "cap", f"{st[2]}_none.jsonl"))]
     os.makedirs(out, exist_ok=True)
     data = draw(res, out)
     for label, rows in data:

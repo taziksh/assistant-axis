@@ -1,21 +1,29 @@
 """The capping effect under each judge on the full set, side by side.
 
-Usage: effect_judges.py   (paths are relative to this file)
+Usage: effect_judges.py [--results-dir DIR] [--judge NAME=PREFIX ...] [--orig-name NAME]
+Defaults reproduce the Llama analysis; paths default relative to this file.
 Reads the two-axis outputs on all replies (results_docent/two_axis*.jsonl)
 and prints coverage and cost per judge, then capped minus uncapped corrected
 harm per jailbreak set with a 95% bootstrap CI over attacks (original judge
 alongside), for all attacks and with DAN's benign categories dropped, and
 judge-vs-judge kappa. Edit JUDGES to add or drop a judge.
 """
-import collections, json, os, random, sys
+import argparse, collections, json, os, random, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 WILD = os.path.dirname(os.path.dirname(HERE))  # wild/: shared modules (judge_paper, wcommon, tables, figures, jbsets) and local data.
 sys.path.insert(0, WILD)
 sys.path.insert(0, HERE)
 import judge_two_axis as t
 
-R = os.path.join(WILD, "results_docent")
-JUDGES = {"DeepSeek V3.2": "two_axis", "Kimi K3": "two_axis_kimi", "GPT-6.1 Sol": "two_axis_sol"}
+ap = argparse.ArgumentParser(description="Capping effect under each judge; see the module docstring.")
+ap.add_argument("--results-dir", default=os.path.join(WILD, "results_docent"))
+ap.add_argument("--judge", action="append", metavar="NAME=PREFIX",
+                help="two-axis output prefix relative to RESULTS_DIR (repeatable)")
+ap.add_argument("--orig-name", default="Original paper judge")
+args = ap.parse_args()
+R = args.results_dir
+JUDGES = (dict(x.split("=", 1) for x in args.judge) if args.judge else
+          {"DeepSeek V3.2": "two_axis", "Kimi K3": "two_axis_kimi", "GPT-6.1 Sol": "two_axis_sol"})
 H = t.HARMFUL
 
 def coverage(prefix):
@@ -35,7 +43,7 @@ for n, p in JUDGES.items():
     fails = {k: v for ax in c.values() for k, v in ax[1].items() if k != "ok"}
     cost = c["act"][2] + c["harm"][2]
     print(f"| {n} | {c['act'][1]['ok']}/{c['act'][0]} | {c['harm'][1]['ok']}/{c['harm'][0]} | "
-          f"{dict(fails) or 0} | {'$%.2f' % cost if cost else 'not logged (~$3)'} |")
+          f"{dict(fails) or 0} | {'$%.2f' % cost if cost else 'not logged'} |")
 
 def pairs_for(prefix):
     m = t.merged(f"{R}/{prefix}")
@@ -67,7 +75,7 @@ def table(title, sel):
                 continue
             if first:
                 u, c, ch, lo, hi = est(ps, orig)
-                print(f"| {s} | Original paper judge | {len(ps)} | {u:.1%} | {c:.1%} | {ch:+.1f} ({lo:+.1f}, {hi:+.1f}) |")
+                print(f"| {s} | {args.orig_name} | {len(ps)} | {u:.1%} | {c:.1%} | {ch:+.1f} ({lo:+.1f}, {hi:+.1f}) |")
                 first = False
             u, c, ch, lo, hi = est(ps, corr)
             print(f"| {s} | {n} (corrected harm) | {len(ps)} | {u:.1%} | {c:.1%} | {ch:+.1f} ({lo:+.1f}, {hi:+.1f}) |")
