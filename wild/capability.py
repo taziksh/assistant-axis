@@ -15,6 +15,12 @@ format, which chat replies don't use (it scored 0.005 on replies that were
 correct, 2026-11-03). Writes RUN_DIR/capability.json.
 Paper, Llama 3.3 70B uncapped / capped: IFEval 0.93 / 0.93, MMLU Pro 0.71 /
 0.70, GSM8K 0.89 / 0.89, EQ-Bench 83.1 / 84.1 (Figure 10). Approved 2026-11-02.
+Qwen 3 32B (2026-11-13): AXIS_MODEL=qwen runs the same benchmarks with Qwen's
+released cap (wcommon) and thinking off (lm-eval's enable_thinking, the same
+chat-template setting as every other Qwen run here). CAP_BATCH sets the batch
+size (default 48). RUN_DIR/capability_model.txt records the model and cap; a
+RUN_DIR holding another model's answers is refused, because lm-eval's answer
+cache is keyed by prompt only.
 """
 
 import argparse
@@ -26,7 +32,9 @@ import lm_eval
 from lm_eval.models.huggingface import HFLM
 from wcommon import capping_config
 from wcommon import CAPPING_EXPERIMENT
+from wcommon import CHAT_KW
 from wcommon import load_probing_model
+from wcommon import MODEL
 
 from assistant_axis import build_capping_steerer
 
@@ -54,6 +62,31 @@ STAGES = {
     },  # Per (sub)task.
     "paper": {"ifeval": None, "mmlu_pro": 100, "gsm8k": 1000, "eq_bench": None},
 }
+BATCH = int(os.environ.get("CAP_BATCH", 48))  # 16 left the H200s mostly idle.
+# The only run made before capability_model.txt existed (results/cap).
+LEGACY_RUN = "unsloth/Llama-3.3-70B-Instruct layers_56:72-p0.25"
+
+
+def check_model(run_dir):
+    """Refuses a RUN_DIR whose saved answers came from another model or cap."""
+    this = f"{MODEL} {CAPPING_EXPERIMENT}"
+    marker = os.path.join(run_dir, "capability_model.txt")
+    if os.path.exists(marker):
+        saved = open(marker).read().strip()
+    elif any(
+        f == "capability.json" or f.startswith("lmeval_cache_")
+        for f in os.listdir(run_dir)
+    ):
+        saved = LEGACY_RUN
+    else:
+        saved = this
+    if saved != this:
+        raise SystemExit(
+            f"{run_dir} holds answers from '{saved}', not '{this}': use"
+            " another RUN_DIR"
+        )
+    with open(marker, "w") as f:
+        f.write(this + "\n")
 
 
 def main():
@@ -66,12 +99,14 @@ def main():
             " RUN_DIR/capability_approved)"
         )
         return
+    check_model(args.run_dir)
     path = os.path.join(args.run_dir, "capability.json")
     res = json.load(open(path)) if os.path.exists(path) else {}
+    print(f"model {MODEL}, cap {CAPPING_EXPERIMENT}, batch {BATCH}, chat {CHAT_KW}", flush=True)
     pm = load_probing_model()
     lm = HFLM(
-        pretrained=pm.model, tokenizer=pm.tokenizer, batch_size=48
-    )  # 16 left the H200s mostly idle.
+        pretrained=pm.model, tokenizer=pm.tokenizer, batch_size=BATCH, **CHAT_KW
+    )  # CHAT_KW: enable_thinking=False for Qwen, nothing for Llama.
     cfg = capping_config()
     for stage, limits in STAGES.items():
         if stage == "paper" and not os.path.exists(
