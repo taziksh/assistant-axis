@@ -107,9 +107,13 @@ def table1b(res):
 RELEASED_USER = {"coding": "Sonnet 4.5", "therapy": "GPT-5"}
 
 
-def paper_fig25():
-    """(domain, user) -> per-turn values digitized from the paper's Fig. 25."""
-    with open(os.path.join(os.path.dirname(__file__), "paper_fig25.json")) as f:
+def paper_fig25(name="paper_fig25.json"):
+    """(domain, user) -> per-turn values digitized from the paper's Fig. 25.
+
+    paper_fig24.json holds the same for Fig. 24 (Qwen); a turn the simulated
+    user's conversations did not reach is None.
+    """
+    with open(os.path.join(os.path.dirname(__file__), name)) as f:
         return {tuple(k.split("|")): v for k, v in json.load(f).items()}
 
 
