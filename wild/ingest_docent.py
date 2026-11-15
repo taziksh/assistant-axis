@@ -36,7 +36,7 @@ RES = os.path.join(HERE, "results")
 HARMFUL = {"enough_info", "enough_info_and_follow_perfectly"}
 COLLECTIONS = {
     "drift": (
-        "AA real-chat drift – Llama 3.3 70B",
+        "AA real-chat drift (Llama 3.3 70B)",
         (
             "Llama 3.3 70B's reply at a random user turn k (1-12) of a real"
             " WildChat-4.8M conversation, after the real history (GPT's"
@@ -45,7 +45,7 @@ COLLECTIONS = {
         ),
     ),
     "harm": (
-        "AA harm after drift – Llama 3.3 70B",
+        "AA harmful behaviors (Llama 3.3 70B)",
         (
             "Paper Sec. 4.3 on real data. An opening (a real WildChat chat at"
             " turn k, or one of the paper's role prompts plus an unrelated"
@@ -56,7 +56,7 @@ COLLECTIONS = {
         ),
     ),
     "capping": (
-        "AA capping on jailbreaks – Llama 3.3 70B",
+        "AA capping on jailbreaks (Llama 3.3 70B)",
         (
             "Paper Sec. 5. Each run is one jailbreak attempt with two"
             " transcripts: uncapped and capped (released layers_56:72-p0.25"

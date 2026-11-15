@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from common import history
 from common import read_jsonl
 
-COLLECTION = "AA history swap – Llama 3.3 70B (2026-10-31)"
+COLLECTION = "AA history swap (Llama 3.3 70B)"
 HISTORY_NAMES = {
     "gpt": "GPT (original WildChat)",
     "own_a": "Llama own rollout A",
