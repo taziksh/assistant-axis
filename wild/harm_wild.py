@@ -154,6 +154,11 @@ def main():
         help="pool: reply at every user turn (1-12) instead of one random turn",
     )
     ap.add_argument(
+        "--last-turn",
+        action="store_true",
+        help="pool: reply at the conversation's last user turn only (if it fits)",
+    )
+    ap.add_argument(
         "--tag",
         default="",
         help="output suffix, so a second harm run doesn't overwrite the first",
@@ -184,6 +189,8 @@ def main():
             rng.shuffle(ks)
             if args.all_turns:  # Every turn, in order, while the prompt fits.
                 ks = sorted(ks)
+            if args.last_turn:  # The final user turn only.
+                ks = [max(ks)]
             for k in ks:  # A random turn whose prompt fits.
                 p = prompt_ids(
                     tok, history(c["users"], c["gpt"], k, c.get("system"))
