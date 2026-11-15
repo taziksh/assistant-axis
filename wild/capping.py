@@ -50,10 +50,19 @@ torch.backends.cuda.enable_cudnn_sdp(False)
 TOKEN_BUDGET = int(os.environ.get("CAP_TOKEN_BUDGET", 20000))
 MAX_BATCH = int(os.environ.get("CAP_MAX_BATCH", 48))
 MAX_PROMPT = 6000
+# 0 is greedy. Lu et al. sample at 0.7 with vLLM's defaults (top-p 1, no top-k).
+TEMPERATURE = float(os.environ.get("CAP_TEMPERATURE", 0))
+# Another model and its released cap (e.g. CAP_MODEL=Qwen/Qwen3-32B
+# CAP_FILE=qwen-3-32b/capping_config.pt CAP_EXP=layers_46:54-p0.25). Qwen runs
+# with thinking off, as in Lu et al.'s command.
+MODEL = os.environ.get("CAP_MODEL", MODEL)
+CAPPING_FILE = os.environ.get("CAP_FILE", CAPPING_FILE)
+CAPPING_EXPERIMENT = os.environ.get("CAP_EXP", CAPPING_EXPERIMENT)
+TEMPLATE_KW = {"enable_thinking": False} if "qwen" in MODEL.lower() else {}
 
 
 def batched_generate(pm, prompts):
-    """Greedy replies for a list of token-id lists; batches sorted by length
+    """Replies for a list of token-id lists; batches sorted by length
     under TOKEN_BUDGET.
     """
     tok = pm.tokenizer
@@ -71,7 +80,11 @@ def batched_generate(pm, prompts):
             gen = pm.model.generate(
                 **batch,
                 max_new_tokens=HARM_NEW_TOKENS,
-                do_sample=False,
+                **(
+                    {"do_sample": True, "temperature": TEMPERATURE, "top_p": 1.0, "top_k": 0}
+                    if TEMPERATURE
+                    else {"do_sample": False}
+                ),
                 pad_token_id=tok.pad_token_id,
             )
         for k, g in zip(idx, gen[:, batch["input_ids"].shape[1] :]):
@@ -113,7 +126,8 @@ def run_set(pm, items, ckpt=None):
             msgs.append({"role": "user", "content": it["turns"][t]})
             ids = tok(
                 tok.apply_chat_template(
-                    msgs, tokenize=False, add_generation_prompt=True
+                    msgs, tokenize=False, add_generation_prompt=True,
+                    **TEMPLATE_KW,
                 ),
                 add_special_tokens=False,
             ).input_ids
@@ -175,13 +189,17 @@ def main():
                     "behavior": r["category"],
                     "context": None,
                     "category": r["category"],
-                    "request": r["system"] + "\n\n" + r["question"],
+                    "persona": r.get("persona"),
+                    "request": r.get(
+                        "judge_request", r["system"] + "\n\n" + r["question"]
+                    ),
                 }
                 for r in read_jsonl(args.shah)
             ]
         }
     else:
         sets = load_sets(args.dl_dir, args.itw, args.itw_templates)
+    print(f"model {MODEL}, cap {CAPPING_FILE} {CAPPING_EXPERIMENT}", flush=True)
     pm = ProbingModel(MODEL)
     cfg = load_capping_config(
         hf_hub_download(AXIS_REPO, CAPPING_FILE, repo_type="dataset")

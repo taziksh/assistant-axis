@@ -180,16 +180,36 @@ def request_text(turns):
     return "\n\n".join(turns)
 
 
+_LU_JUDGE_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "data", "lu", "judge.json"
+)
+LU_JUDGE = (
+    json.load(open(_LU_JUDGE_PATH)) if os.path.exists(_LU_JUDGE_PATH) else None
+)
+
+
 async def judge_one(client, sem, row, request, tok, judge, scenario):
     err = None
     reply = row["replies"][-1]
     reply = tok.decode(tok.encode(reply, add_special_tokens=False)[:512])
-    user = USER.format(
-        request=request,
-        response=reply,
-        behavior=row[scenario],
-        action=row[scenario],
-    )
+    if scenario == "lu":
+        system, user = (
+            m["content"].format(
+                request=request,
+                response=reply,
+                behavior=row["persona"],
+                action=row["category"],
+            )
+            for m in LU_JUDGE["prompts"]
+        )
+    else:
+        system = SYSTEM
+        user = USER.format(
+            request=request,
+            response=reply,
+            behavior=row[scenario],
+            action=row[scenario],
+        )
     async with sem:
         for attempt in range(5):
             try:
@@ -198,7 +218,7 @@ async def judge_one(client, sem, row, request, tok, judge, scenario):
                     temperature=0,
                     response_format={"type": "json_object"},
                     messages=[
-                        {"role": "system", "content": SYSTEM},
+                        {"role": "system", "content": system},
                         {"role": "user", "content": user},
                     ],
                     extra_body={
@@ -256,11 +276,13 @@ async def main():
     ap.add_argument("--concurrency", type=int, default=16)
     ap.add_argument(
         "--scenario",
-        choices=["behavior", "category"],
+        choices=["behavior", "category", "lu"],
         default="behavior",
         help=(
             "row field that fills the judge's behavior and target action;"
             " category is Shah et al.'s choice, for their indirect questions"
+            "; lu uses Lu et al.'s own judge text, with the persona as behavior"
+            " and the harm category as target action"
         ),
     )
     ap.add_argument(
@@ -284,7 +306,7 @@ async def main():
     judge = JUDGES[args.judge]
     sem = asyncio.Semaphore(args.concurrency)
     for path in args.files:
-        suffix = "" if args.scenario == "behavior" else "_cat"
+        suffix = {"behavior": "", "category": "_cat", "lu": "_lu"}[args.scenario]
         out_path = path.replace(".jsonl", f".judged_{args.judge}{suffix}.jsonl")
         kept = (
             [r for r in read_jsonl(out_path) if r["score"]]
