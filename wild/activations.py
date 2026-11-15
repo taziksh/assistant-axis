@@ -23,6 +23,7 @@ from wcommon import AXIS_FILE
 from wcommon import AXIS_REPO
 from wcommon import CAPPING_EXPERIMENT
 from wcommon import CAPPING_FILE
+from wcommon import CHAT_KW
 from wcommon import history
 from wcommon import LAYER
 from wcommon import MODEL
@@ -89,7 +90,7 @@ def main():
     last_layer = max(caps)
 
     def run(msgs):
-        full_ids, spans = enc.build_turn_spans(msgs)
+        full_ids, spans = enc.build_turn_spans(msgs, **CHAT_KW)
         last = (
             sum(m["role"] != "system" for m in msgs) - 1
         )  # Span turn indices skip the system prompt.

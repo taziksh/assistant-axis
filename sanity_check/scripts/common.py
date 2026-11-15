@@ -1,6 +1,7 @@
 """Shared constants and helpers for the history-writer sanity check."""
 
 import json
+import os
 
 # Ungated mirror of meta-llama/Llama-3.3-70B-Instruct: same safetensors (sha256)
 # and chat template.
@@ -46,6 +47,15 @@ BAD_STRINGS = (
     "<|python_tag|>",
     "<|finetune_right_pad_id|>",
 )
+
+# AXIS_MODEL=qwen switches the wild/ experiments to Qwen 3 32B (2026-11-11): the
+# released Qwen axis at the repo's target layer (assistant_axis/models.py),
+# thinking off as in the paper's runs, and Qwen's control tokens as bad strings.
+if os.environ.get("AXIS_MODEL") == "qwen":
+    MODEL, LAYER = "Qwen/Qwen3-32B", 32
+    AXIS_FILE = "qwen-3-32b/assistant_axis.pt"
+    BAD_STRINGS += ("<|im_start|>", "<|im_end|>", "<|endoftext|>", "<think>", "</think>")
+CHAT_KW = {"enable_thinking": False} if "qwen" in MODEL.lower() else {}
 
 
 def read_jsonl(path):
@@ -94,6 +104,6 @@ def scored_turns(n_users):
 
 def prompt_ids(tok, msgs):
     text = tok.apply_chat_template(
-        msgs, tokenize=False, add_generation_prompt=True
+        msgs, tokenize=False, add_generation_prompt=True, **CHAT_KW
     )
     return tok(text, add_special_tokens=False).input_ids

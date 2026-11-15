@@ -25,6 +25,7 @@ AXIS_FILE, AXIS_REPO, BAD_STRINGS, LAYER, MODEL = (
     _sc.MODEL,
 )
 TEMPERATURE, TOP_P = _sc.TEMPERATURE, _sc.TOP_P
+CHAT_KW = _sc.CHAT_KW
 history, prompt_ids, read_jsonl, write_jsonl = (
     _sc.history,
     _sc.prompt_ids,
@@ -50,6 +51,9 @@ CAPPING_FILE = "llama-3.3-70b/capping_config.pt"
 CAPPING_EXPERIMENT = (  # Recommended setting for Llama 3.3 70B (repo README).
     "layers_56:72-p0.25"
 )
+if "qwen" in MODEL.lower():  # AXIS_MODEL=qwen (sanity_check/scripts/common.py).
+    CAPPING_FILE = "qwen-3-32b/capping_config.pt"
+    CAPPING_EXPERIMENT = "layers_46:54-p0.25"
 HARM_CLS = "cais/HarmBench-Llama-2-13b-cls"
 
 # The paper says only "deepseek-v3" (no version, provider or date; checked the
