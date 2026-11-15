@@ -6,6 +6,8 @@ lives in its own folder with its own README:
 | Folder | What it audits |
 |---|---|
 | [`jailbreaks/`](jailbreaks/README.md) | The harm judge behind the activation-capping results on real jailbreaks (MHJ, DAN, Shah): hand-labeled spot check, a two-axis re-judge with three judge models, agreement statistics, and the capping effect under each judge. |
+| [`harm_drift/`](harm_drift/README.md) | The harm judge behind the harm-after-drift test (paper Sec. 4.3): a stratified, weighted hand-check of its verdicts, where four tool-list questions carry 90% of the harmful verdicts. |
+| [`domains/`](domains/README.md) | The WildChat domain classifier (therapy, AI philosophy) that picks chats for the persona-drift domain comparison: a blind hand-check of its labels and its precision by domain and pool. |
 
 Conventions shared by the audits:
 

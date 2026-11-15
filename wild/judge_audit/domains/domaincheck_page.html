@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Domain Hand-Check</title>
+<style>
+:root {
+  --bg: #fbfaf7; --panel: #ffffff; --ink: #1c1b18; --muted: #6b675e; --line: #e4e0d6;
+  --accent: #1f5fbf; --accent-ink: #ffffff; --soft: #eef3fb; --code: #f3f1ec; --user: #eef3fb;
+  --good: #2a7a3b; --bad: #b3261e; --unsure: #8a6d00; --warn: #fff4d6; --ok: #e7f4ea;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15161a; --panel: #1d1f25; --ink: #ecebe6; --muted: #9a9890; --line: #30333b;
+    --accent: #7aa7ff; --accent-ink: #0d1b33; --soft: #1f2a40; --code: #121318; --user: #1c2638;
+    --good: #7fd39a; --bad: #ff8a80; --unsure: #ffd666; --warn: #3a3214; --ok: #183222;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15161a; --panel: #1d1f25; --ink: #ecebe6; --muted: #9a9890; --line: #30333b;
+  --accent: #7aa7ff; --accent-ink: #0d1b33; --soft: #1f2a40; --code: #121318; --user: #1c2638;
+  --good: #7fd39a; --bad: #ff8a80; --unsure: #ffd666; --warn: #3a3214; --ok: #183222;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 980px; margin: 0 auto; padding: 32px 16px 80px; }
+h1 { font-family: Georgia, "Times New Roman", serif; font-size: 34px; margin: 0 0 8px; letter-spacing: -0.01em; }
+h2 { font-family: Georgia, serif; font-size: 24px; margin: 28px 0 8px; }
+.lede { color: var(--muted); margin: 0 0 12px; max-width: 72ch; }
+.keys { color: var(--muted); font-size: 14px; margin-bottom: 16px; }
+kbd { font: 13px/1 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 3px 6px; background: var(--panel); color: var(--ink); }
+details.rubric { border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; margin: 0 0 16px; background: var(--panel); }
+details.rubric summary { cursor: pointer; font-weight: 600; }
+details.rubric ul { margin: 6px 0; padding-left: 20px; }
+details.rubric li { margin: 3px 0; }
+.banner { border-radius: 10px; padding: 10px 14px; font-size: 14px; margin-bottom: 16px; }
+.banner.warn { background: var(--warn); }
+.banner.ok { background: var(--ok); }
+.pills { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0 20px; }
+.pill { width: 32px; height: 32px; border-radius: 50%; border: 1.5px solid var(--line); background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; display: grid; place-items: center; padding: 0; }
+.pill.done { border-color: var(--accent); color: var(--accent); }
+.pill.cur { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.pill.miss { border-color: var(--bad); color: var(--bad); }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px 24px; }
+.eyebrow { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.chat { max-height: 62vh; overflow: auto; border: 1px solid var(--line); border-radius: 10px; padding: 4px 14px; margin: 0 0 16px; background: var(--bg); }
+.msg { margin: 12px 0; }
+.who { font: 12px ui-monospace, Menlo, monospace; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 3px; }
+.body { white-space: pre-wrap; overflow-wrap: anywhere; border-radius: 10px; padding: 10px 14px; }
+.user .body { background: var(--user); font-size: 15.5px; }
+.assistant .body { background: var(--code); color: var(--muted); font-size: 14px; }
+.assistant.clamped .body { max-height: 4.6em; overflow: hidden; -webkit-mask-image: linear-gradient(#000 55%, transparent); mask-image: linear-gradient(#000 55%, transparent); cursor: pointer; }
+.q { font-weight: 600; margin: 8px 0 10px; }
+.answers { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+button { font: inherit; cursor: pointer; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 8px 14px; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.answers button.on { outline: 2px solid var(--accent); outline-offset: 1px; font-weight: 600; }
+textarea { width: 100%; min-height: 56px; font: inherit; border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; background: var(--panel); color: var(--ink); resize: vertical; }
+.status { margin: 20px 0 0; color: var(--muted); font-size: 14px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.saved { font-size: 13px; }
+.hid { display: none; }
+.tag { display: inline-block; font: 12px ui-monospace, Menlo, monospace; border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; color: var(--muted); }
+.verdict { margin: 0 0 14px; padding: 8px 12px; border-radius: 9px; background: var(--soft); font-size: 14px; }
+.agree { color: var(--good); font-weight: 600; } .disagree { color: var(--bad); font-weight: 600; } .unsure { color: var(--unsure); font-weight: 600; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 8px 0 18px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.small { font-size: 13px; color: var(--muted); }
+.linkish { background: none; border: none; color: var(--accent); padding: 0; text-decoration: underline; }
+@media (max-width: 600px) { .card { padding: 16px; } h1 { font-size: 28px; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Domain Hand-Check</h1>
+  <p class="lede" id="lede"></p>
+  <div id="banner" class="banner hid"></div>
+  <details class="rubric" id="rubric" open>
+    <summary>What counts (press <kbd>R</kbd> to show or hide)</summary>
+    <ul>
+      <li><b>Therapy</b>: personal emotional disclosure or support about a real situation (anxiety, relationships, low mood, grief, self-worth). It counts whether the situation is the user's own or someone else's they're helping: a friend in crisis, a client whose messages they relay. Fictional or hypothetical people don't count.</li>
+      <li><b>AI philosophy</b>: a philosophical discussion of an AI's consciousness, identity, agency or moral status.</li>
+      <li><b>Neither</b>: everything else, including on-topic chats that are <b>roleplay</b> (fictional therapy sessions, stories about sentient robots), chats that <b>switch to an unrelated task</b>, and <b>plain factual questions</b> ("what is CBT?", "how do neural networks work?").</li>
+      <li>Judge by the <b>user's messages across the whole chat</b>, not just the opening. The assistant's replies are shown faded and collapsed; they don't decide the label.</li>
+      <li>Use <b>Unsure</b> for genuine coin-flips, and say why in the note.</li>
+    </ul>
+  </details>
+  <p class="keys"><kbd>T</kbd> therapy · <kbd>A</kbd> AI philosophy · <kbd>N</kbd> neither · <kbd>U</kbd> unsure (then moves to the next chat) · <kbd>←</kbd> <kbd>→</kbd> move · <kbd>E</kbd> expand or collapse assistant replies · <kbd>Esc</kbd> leaves the note box</p>
+  <div class="pills" id="pills"></div>
+  <section class="card" id="card"></section>
+  <div class="status">
+    <span id="progress"></span>
+    <span id="saved" class="saved"></span>
+    <button id="export">Export labels (JSONL)</button>
+    <input type="file" id="import" class="hid" accept=".jsonl,.json,.txt">
+    <button id="importBtn">Import labels</button>
+    <button id="reveal" class="primary">Reveal classifier labels</button>
+    <button id="clear">Clear my labels</button>
+  </div>
+  <section id="results" class="hid"></section>
+</main>
+<script>
+const DATA = /*__PAYLOAD__*/null;
+const items = DATA.items;
+const KEY = "domaincheck:" + DATA.meta.payload_hash;
+const NAMES = {therapy: "Therapy", ai_philosophy: "AI philosophy", neither: "Neither", unsure: "Unsure"};
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+
+// Storage: test it up front, because some viewers (sandboxed previews, in-app browsers) drop localStorage silently.
+let canStore = false;
+try { const t = KEY + ":probe"; localStorage.setItem(t, "1"); canStore = localStorage.getItem(t) === "1"; localStorage.removeItem(t); } catch (e) { canStore = false; }
+let labels = {}, idx = 0, revealed = false, expandAll = false, lastSave = null, dirty = 0;
+if (canStore) { try { const s = JSON.parse(localStorage.getItem(KEY) || "{}"); labels = s.labels || {}; revealed = !!s.revealed; } catch (e) { labels = {}; } }
+const save = () => {
+  dirty++;
+  if (!canStore) return renderSaved();
+  try { localStorage.setItem(KEY, JSON.stringify({labels, revealed})); lastSave = new Date(); dirty = 0; } catch (e) { canStore = false; }
+  renderSaved();
+};
+function renderSaved() {
+  if (canStore) $("saved").textContent = lastSave ? `Saved in this browser at ${lastSave.toLocaleTimeString()}` : "Saves automatically in this browser";
+  else $("saved").innerHTML = `<b class="disagree">Not saving</b>: export before closing`;
+}
+const nDone = () => items.filter(it => labels[it.key] && labels[it.key].label).length;
+const firstOpen = from => { for (let k = 1; k <= items.length; k++) { const j = (from + k) % items.length; if (!(labels[items[j].key] || {}).label) return j; } return Math.min(from + 1, items.length - 1); };
+
+const dc = DATA.meta.counts || {};
+$("lede").textContent = `${items.length} real WildChat chats that a classifier labelled either therapy or AI philosophy, in shuffled order. For each one, decide which domain the user's side of the chat belongs to. The classifier's label stays hidden until you reveal it, ideally after all ${items.length}.`;
+const bn = $("banner");
+if (!canStore) { bn.className = "banner warn"; bn.innerHTML = "<b>This viewer can't save your labels.</b> Open the file in a normal browser (Chrome, Firefox, Safari), or use <b>Export labels</b> often and <b>Import labels</b> to resume."; }
+else { bn.className = "banner ok"; bn.textContent = "Labels save automatically in this browser (only on this computer, in this browser). Export when you finish, or to move to another browser."; }
+
+function renderPills() {
+  $("pills").innerHTML = items.map((it, i) => {
+    const L = labels[it.key] || {};
+    const miss = revealed && L.label && L.label !== "unsure" && L.label !== it.domain;
+    return `<button class="pill ${L.label ? "done" : ""} ${miss ? "miss" : ""} ${i === idx ? "cur" : ""}" data-i="${i}" title="Chat ${i + 1}">${i + 1}</button>`;
+  }).join("");
+}
+function renderCard() {
+  const it = items[idx], L = labels[it.key] || {};
+  const msgs = it.messages.map((m, j) => {
+    const role = m.role === "user" ? "user" : m.role === "assistant" ? "assistant" : "system";
+    const nUser = it.messages.slice(0, j + 1).filter(x => x.role === "user").length;
+    const who = role === "user" ? `User · turn ${nUser}` : role === "assistant" ? "Assistant" : role;
+    const clamp = role === "assistant" && !expandAll ? "clamped" : "";
+    return `<div class="msg ${role} ${clamp}" data-j="${j}"><div class="who">${esc(who)}</div><div class="body">${esc(m.text)}</div></div>`;
+  }).join("");
+  let verdict = "";
+  if (revealed) {
+    const cls = !L.label ? "" : L.label === "unsure" ? "unsure" : L.label === it.domain ? "agree" : "disagree";
+    const word = !L.label ? "not labeled" : L.label === "unsure" ? "you were unsure" : L.label === it.domain ? "agrees with you" : `you said ${NAMES[L.label]}`;
+    verdict = `<div class="verdict">Classifier: <b>${NAMES[it.domain]}</b> <span class="tag">${esc(it.subtopic)}</span> <span class="tag">pool ${esc(it.pool)}</span> · <span class="${cls}">${word}</span></div>`;
+  }
+  $("card").innerHTML = `
+    <div class="eyebrow"><span>Chat ${idx + 1} of ${items.length}</span><span>${it.turns ?? "?"} user turns</span>${L.label ? `<span>labeled ${esc(NAMES[L.label])}</span>` : ""}</div>
+    ${verdict}
+    <div class="chat" id="chat">${msgs}</div>
+    <p class="q">Which domain is the user's side of this chat?</p>
+    <div class="answers">
+      ${["therapy", "ai_philosophy", "neither", "unsure"].map(l => `<button data-l="${l}" class="${L.label === l ? "on" : ""}">${NAMES[l]} <kbd>${{therapy: "T", ai_philosophy: "A", neither: "N", unsure: "U"}[l]}</kbd></button>`).join("")}
+    </div>
+    <textarea id="note" placeholder="Note (optional): why, especially for Neither or Unsure">${esc(L.note || "")}</textarea>`;
+  $("note").oninput = e => { labels[it.key] = Object.assign(labels[it.key] || {}, {note: e.target.value}); save(); };
+}
+function render() {
+  renderPills(); renderCard();
+  $("progress").textContent = `${nDone()} / ${items.length} labeled`;
+  $("reveal").textContent = revealed ? "Hide classifier labels" : "Reveal classifier labels";
+  renderSaved();
+  if (revealed) summarize(); else $("results").classList.add("hid");
+}
+function setLabel(l, advance) {
+  const it = items[idx];
+  labels[it.key] = Object.assign(labels[it.key] || {}, {label: l, ts: new Date().toISOString()});
+  save();
+  if (advance && !revealed) idx = firstOpen(idx);
+  render(); window.scrollTo({top: 0});
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("button");
+  const clamped = e.target.closest(".assistant.clamped");
+  if (clamped && !b) { clamped.classList.remove("clamped"); return; }
+  if (!b) return;
+  if (b.dataset.l) setLabel(b.dataset.l, true);
+  else if (b.dataset.i !== undefined) { idx = +b.dataset.i; render(); }
+  else if (b.dataset.go !== undefined) { idx = +b.dataset.go; render(); window.scrollTo({top: 0}); }
+});
+document.addEventListener("keydown", e => {
+  const inNote = document.activeElement && document.activeElement.id === "note";
+  if (e.key === "Escape") { if (inNote) document.activeElement.blur(); return; }
+  if (inNote || e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  const map = {t: "therapy", a: "ai_philosophy", n: "neither", u: "unsure"};
+  if (map[k]) setLabel(map[k], true);
+  else if (e.key === "ArrowRight" && idx < items.length - 1) { idx++; render(); }
+  else if (e.key === "ArrowLeft" && idx > 0) { idx--; render(); }
+  else if (k === "e") { expandAll = !expandAll; renderCard(); }
+  else if (k === "r") { $("rubric").open = !$("rubric").open; }
+  else return;
+  e.preventDefault();
+});
+$("reveal").onclick = () => {
+  if (!revealed && nDone() < items.length && !confirm(`Only ${nDone()} of ${items.length} chats are labeled. Seeing the classifier's labels now will bias the rest. Reveal anyway?`)) return;
+  revealed = !revealed; save(); render();
+  if (revealed) $("results").scrollIntoView({behavior: "smooth"});
+};
+$("clear").onclick = () => { if (confirm("Delete all labels stored for this page?")) { labels = {}; revealed = false; save(); render(); } };
+$("export").onclick = () => {
+  const rows = items.filter(it => labels[it.key]).map((it, i) => { const L = labels[it.key]; return {key: it.key, run_id: it.run_id, page_no: items.indexOf(it) + 1, label: L.label || "", note: L.note || "", ts: L.ts || "", classifier_domain: it.domain, classifier_subtopic: it.subtopic, pool: it.pool, turns: it.turns, reviewer: ""}; });
+  const blob = new Blob([rows.map(r => JSON.stringify(r)).join("\n") + "\n"], {type: "application/jsonl"});
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `domaincheck_labels_${DATA.meta.payload_hash}.jsonl`; a.click();
+};
+$("importBtn").onclick = () => $("import").click();
+$("import").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  let n = 0;
+  for (const line of (await f.text()).split("\n")) {
+    if (!line.trim()) continue;
+    try { const r = JSON.parse(line); if (r.key && items.some(it => it.key === r.key)) { labels[r.key] = {label: r.label || undefined, note: r.note || "", ts: r.ts}; n++; } } catch (err) {}
+  }
+  save(); idx = firstOpen(-1); render(); alert(`Imported ${n} labels.`);
+};
+
+// ---- results ----
+function wilson(k, n) {
+  if (!n) return [NaN, NaN, NaN];
+  const z = 1.96, p = k / n, d = 1 + z * z / n, c = (p + z * z / (2 * n)) / d;
+  const h = z * Math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d;
+  return [p, c - h, c + h];
+}
+const pc = x => Number.isNaN(x) ? "—" : Math.round(100 * x) + "%";
+function summarize() {
+  const lab = items.map((it, i) => ({it, i, L: labels[it.key] || {}})).filter(x => x.L.label);
+  const row = (name, g) => {
+    const sure = g.filter(x => x.L.label !== "unsure"), k = sure.filter(x => x.L.label === x.it.domain).length;
+    const [p, lo, hi] = wilson(k, sure.length);
+    return `<tr><td>${name}</td><td class="num">${g.length}</td><td class="num">${k} / ${sure.length}</td><td class="num">${pc(p)} <span class="small">(${pc(lo)}–${pc(hi)})</span></td><td class="num">${g.length - sure.length}</td></tr>`;
+  };
+  const pools = [...new Set(items.map(it => it.pool))].sort();
+  let rows = row("All", lab);
+  for (const d of ["therapy", "ai_philosophy"]) {
+    rows += row(`<b>${NAMES[d]}</b>`, lab.filter(x => x.it.domain === d));
+    for (const p of pools) { const g = lab.filter(x => x.it.domain === d && x.it.pool === p); if (g.length) rows += row(`&nbsp;&nbsp;pool ${esc(p)}`, g); }
+  }
+  const cats = ["therapy", "ai_philosophy", "neither", "unsure"];
+  const conf = ["therapy", "ai_philosophy"].map(d => `<tr><td>${NAMES[d]}</td>${cats.map(c => `<td class="num">${lab.filter(x => x.it.domain === d && x.L.label === c).length}</td>`).join("")}</tr>`).join("");
+  const off = lab.filter(x => x.L.label !== x.it.domain).map(x => `<tr><td><button class="linkish" data-go="${x.i}">#${x.i + 1}</button></td><td>${NAMES[x.it.domain]} <span class="tag">${esc(x.it.subtopic)}</span></td><td class="${x.L.label === "unsure" ? "unsure" : "disagree"}">${NAMES[x.L.label]}</td><td>${esc(x.L.note || "")}</td></tr>`).join("");
+  $("results").innerHTML = `<h2>Classifier labels revealed</h2>
+    <p class="small">${lab.length} of ${items.length} chats labeled. Precision is the share of the classifier's picks you gave the same domain; Unsure is left out of precision and counted on its own. Intervals are Wilson 95%. This sample can only measure precision, not how many real therapy or AI-philosophy chats the classifier missed.</p>
+    <table><tr><th>Classifier picks</th><th class="num">Labeled</th><th class="num">You agree</th><th class="num">Precision (95% CI)</th><th class="num">Unsure</th></tr>${rows}</table>
+    <h3>Your label by classifier label</h3>
+    <table><tr><th>Classifier \\ You</th>${cats.map(c => `<th class="num">${NAMES[c]}</th>`).join("")}</tr>${conf}</table>
+    <h3>Disagreements and unsure</h3>
+    ${off ? `<table><tr><th>Chat</th><th>Classifier</th><th>You</th><th>Note</th></tr>${off}</table>` : `<p class="small">None.</p>`}`;
+  $("results").classList.remove("hid");
+}
+idx = firstOpen(-1);
+render();
+</script>
+</body>
+</html>
