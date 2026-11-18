@@ -65,7 +65,7 @@ from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import FancyBboxPatch
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.stats import spearmanr
+from scipy.stats import pearsonr, spearmanr
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from capability_score import scores as benchmark_scores
@@ -197,11 +197,11 @@ def fig_drift(res, out, name, series):
     save(fig, out, name)
 
 
-def openings_by_hash(stems, res):
+def openings_by_hash(stems, res, suffix=".judged_v3.2.jsonl"):
     """(hash, projection, harmful rate) per opening."""
     rows = collections.defaultdict(list)
     for s in stems:
-        score = verdicts(os.path.join(res, s + ".judged_v3.2.jsonl"))
+        score = verdicts(os.path.join(res, s + suffix))
         for r in read(os.path.join(res, s + ".jsonl")):
             if r["id"] in score:
                 rows[(r["hash"], r["k"], r["proj"])].append(
@@ -210,8 +210,23 @@ def openings_by_hash(stems, res):
     return [(h, p, float(np.mean(v))) for (h, _, p), v in rows.items()]
 
 
-def fig_harm(res, out, name, stems, label_roles):
-    ops = openings_by_hash(stems, res)
+# Roles the paper's Figure 8 names, with each label's offset in points. Its
+# Virus and Hive are left out: in the rerun they sit under Researcher.
+PAPER_FIG8_ROLES = {
+    "demon": (5, 4), "narcissist": (5, 4), "spy": (5, 4), "saboteur": (5, 4),
+    "echo": (5, 4), "angel": (5, 4), "familiar": (5, 4), "visionary": (5, 4),
+    "researcher": (-4, 16),
+}
+
+
+def fig_harm(res, out, name, stems, label_roles, suffix=".judged_v3.2.jsonl",
+             roles_file=None, pearson=False, ymax=None):
+    """Harmful rate against the opening's projection, one dot per opening.
+
+    With roles_file (rows {hash, role}), names one opening of each role in
+    PAPER_FIG8_ROLES instead of the most harmful openings.
+    """
+    ops = openings_by_hash(stems, res, suffix)
     x = np.array([o[1] for o in ops])
     y = np.array([o[2] for o in ops])
     lo_x, hi_x = np.floor(x.min()), np.ceil(x.max())
@@ -228,7 +243,23 @@ def fig_harm(res, out, name, stems, label_roles):
         alpha=0.4,
         lw=0,
     )
-    if label_roles:
+    if roles_file:
+        role = {r["hash"]: r["role"] for r in read(os.path.join(res, roles_file))}
+        for name_, offset in PAPER_FIG8_ROLES.items():
+            mine = [o for o in ops if role[o[0]] == name_]
+            if mine:
+                _, px, py = max(mine, key=lambda o: o[2])
+                ax.scatter([px], [py], s=16, color=LABEL, lw=0, zorder=3)
+                ax.annotate(
+                    name_.title(),
+                    (px, py),
+                    xytext=offset,
+                    textcoords="offset points",
+                    fontsize=9.5,
+                    fontweight="semibold",
+                    color=LABEL,
+                )
+    elif label_roles:
         # Name the most harmful openings and the two ends of the axis.
         picks = sorted(ops, key=lambda o: -o[2])[:4]
         picks += sorted(ops, key=lambda o: o[1])[:1]
@@ -248,12 +279,15 @@ def fig_harm(res, out, name, stems, label_roles):
                 fontweight="semibold",
                 color=LABEL,
             )
-    rho = spearmanr(x, y)[0]
-    lo, hi = ci(list(zip(x, y)), lambda p: spearmanr(*zip(*p))[0])
+    corr = pearsonr if pearson else spearmanr
+    rho = corr(x, y)[0]
+    lo, hi = ci(list(zip(x, y)), lambda p: corr(*zip(*p))[0])
     ax.text(
         1,
         0.97,
-        f"ρ = {rho:+.2f} ({lo:+.2f}, {hi:+.2f})".replace("-", "−"),
+        f"{'r' if pearson else 'ρ'} = {rho:+.2f} ({lo:+.2f}, {hi:+.2f})".replace(
+            "-", "−"
+        ),
         transform=ax.transAxes,
         ha="right",
         va="top",
@@ -267,7 +301,7 @@ def fig_harm(res, out, name, stems, label_roles):
         ax.spines[side].set_linewidth(1.5)
     ax.tick_params(colors=AXIS, labelcolor=AXIS, length=5, width=1.2)
     ax.set_xlim(lo_x - 0.2, hi_x + 0.2)
-    ax.set_ylim(0, max(0.3, y.max() + 0.03))
+    ax.set_ylim(0, ymax or max(0.3, y.max() + 0.03))
     ax.set_ylabel(
         "Rate of Harmful Responses", color=AXIS, fontweight="bold", labelpad=10
     )
@@ -306,6 +340,21 @@ def fig_harm(res, out, name, stems, label_roles):
         fontsize=9.5,
     )
     save(fig, out, name, tight=False)
+
+
+def fig_harm_rerun(res, out):
+    """Our rerun of the paper's Figure 8 (q43b_build.py), on its y-axis range."""
+    fig_harm(
+        res,
+        out,
+        "harm_vs_drift_rerun",
+        ["q43b/harm_block1"],
+        False,
+        suffix=".judged_v3.2_lu.jsonl",
+        roles_file="q43b/harm_openings.jsonl",
+        pearson=True,
+        ymax=0.5,
+    )
 
 
 # Per model: its jailbreak sets as (name, uncapped stem, capped stem, judge
@@ -923,12 +972,13 @@ def main():
         ["harmfloor/harm_wild_k1"],
         False,
     )
+    fig_harm_rerun(res, out)
     fig_capping(res, out)
     fig_domains(res, out)
     fig_control(res, out)
     fig_sweep(res, out)
     fig_sweep_scatter(res, out)
-    print(f"wrote 10 figures to {out}")
+    print(f"wrote 11 figures to {out}")
 
 
 if __name__ == "__main__":
