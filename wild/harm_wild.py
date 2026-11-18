@@ -21,7 +21,8 @@ Design (approved 2026-11-03), following the paper:
   The "Child Abuse" category is excluded so that no replies about harming
   children are generated or stored. --questions-jsonl uses another set instead
   (e.g. the Shah-style questions). One reply per opening x question. Writes
-  RUN_DIR/harm_openings{T}.jsonl and RUN_DIR/harm_wild{T}.jsonl.
+  RUN_DIR/harm_openings{T}.jsonl and RUN_DIR/harm_wild{T}.jsonl. --chunk N saves
+  after every N openings and resumes; --shard I/N takes every N-th opening.
 Generation: vLLM, temperature 0.7, top_p 0.9 (the repo's settings), no system
 prompt (except role openings from roles_build.py, which carry the role prompt as
 in the paper).
@@ -29,6 +30,7 @@ in the paper).
 
 import argparse
 from collections import defaultdict
+import json
 import os
 import random
 import re
@@ -163,6 +165,23 @@ def main():
         default="",
         help="output suffix, so a second harm run doesn't overwrite the first",
     )
+    ap.add_argument(
+        "--chunk",
+        type=int,
+        default=None,
+        help=(
+            "harm: generate this many openings at a time and append the replies"
+            " after each chunk, skipping replies already saved (a rerun resumes)"
+        ),
+    )
+    ap.add_argument(
+        "--shard",
+        default=None,
+        help=(
+            "harm: I/N keeps every N-th chosen opening starting at I (one"
+            " process per GPU)"
+        ),
+    )
     args = ap.parse_args()
     convs = {
         c["hash"]: c
@@ -273,40 +292,50 @@ def main():
         if args.questions_jsonl
         else pick_questions(args.catqa_jsonl, args.per_category)
     )
-    units, prompts = [], []
-    for o, xp, b in chosen:
-        c = convs[o["hash"]]
-        base = history(c["users"], c["gpt"], o["k"], c.get("system")) + [
-            {"role": "assistant", "content": o["reply"]}
-        ]
-        for q in questions:
-            p = prompt_ids(
-                tok, base + [{"role": "user", "content": q["question"]}]
-            )
-            if len(p) <= MAX_MODEL_LEN - HARM_NEW_TOKENS:
-                units.append((o, xp, b, q))
-                prompts.append(p)
-    outs = llm.generate(
-        [{"prompt_token_ids": p} for p in prompts], params(HARM_NEW_TOKENS)
-    )
-    write_jsonl(
-        os.path.join(args.run_dir, f"harm_openings{args.tag}.jsonl"),
-        [
+    if args.shard:
+        i, n = map(int, args.shard.split("/"))
+        chosen = chosen[i::n]
+    out_path = os.path.join(args.run_dir, f"harm_wild{args.tag}.jsonl")
+    done = set()
+    if args.chunk and os.path.exists(out_path):
+        kept = []
+        with open(out_path) as f:
+            for line in f:
+                try:
+                    kept.append(json.loads(line))
+                except ValueError:  # A row cut off by a crash: regenerated.
+                    pass
+        write_jsonl(out_path, kept)
+        done = {r["id"] for r in kept}
+
+    def reply_id(o, q):
+        return f"{o['hash']}-{o['k']}-{q['id']}"
+
+    def generate(batch):
+        """Replies to every question after each opening in batch, minus done."""
+        units, prompts = [], []
+        for o, xp, b in batch:
+            c = convs[o["hash"]]
+            base = history(c["users"], c["gpt"], o["k"], c.get("system")) + [
+                {"role": "assistant", "content": o["reply"]}
+            ]
+            for q in questions:
+                if reply_id(o, q) in done:
+                    continue
+                p = prompt_ids(
+                    tok, base + [{"role": "user", "content": q["question"]}]
+                )
+                if len(p) <= MAX_MODEL_LEN - HARM_NEW_TOKENS:
+                    units.append((o, xp, b, q))
+                    prompts.append(p)
+        if not prompts:
+            return []
+        outs = llm.generate(
+            [{"prompt_token_ids": p} for p in prompts], params(HARM_NEW_TOKENS)
+        )
+        return [
             {
-                "hash": o["hash"],
-                "k": o["k"],
-                "proj": xp,
-                "band": b,
-                "role": convs[o["hash"]].get("role"),
-            }
-            for o, xp, b in chosen
-        ],
-    )
-    write_jsonl(
-        os.path.join(args.run_dir, f"harm_wild{args.tag}.jsonl"),
-        [
-            {
-                "id": f"{o['hash']}-{o['k']}-{q['id']}",
+                "id": reply_id(o, q),
                 "hash": o["hash"],  # Full hash: role ids collided at 12 chars.
                 "k": o["k"],
                 "proj": xp,
@@ -320,10 +349,42 @@ def main():
                 "finish": out.outputs[0].finish_reason,
             }
             for (o, xp, b, q), out in zip(units, outs)
+        ]
+
+    write_jsonl(
+        os.path.join(args.run_dir, f"harm_openings{args.tag}.jsonl"),
+        [
+            {
+                "hash": o["hash"],
+                "k": o["k"],
+                "proj": xp,
+                "band": b,
+                "role": convs[o["hash"]].get("role"),
+            }
+            for o, xp, b in chosen
         ],
     )
+    if args.chunk:
+        n_new = 0
+        for start in range(0, len(chosen), args.chunk):
+            rows = generate(chosen[start : start + args.chunk])
+            with open(out_path, "a") as f:
+                for r in rows:
+                    f.write(json.dumps(r) + "\n")
+                f.flush()
+                os.fsync(f.fileno())
+            n_new += len(rows)
+            print(
+                f"harm: openings {min(start + args.chunk, len(chosen))} of"
+                f" {len(chosen)}, {n_new} new replies ({len(done)} were saved)",
+                flush=True,
+            )
+    else:
+        rows = generate(chosen)
+        write_jsonl(out_path, rows)
+        n_new = len(rows)
     print(
-        f"harm: {len(units)} replies from {len(chosen)} openings x"
+        f"harm: {n_new} replies from {len(chosen)} openings x"
         f" {len(questions)} questions",
         flush=True,
     )
