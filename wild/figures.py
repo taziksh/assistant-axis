@@ -22,6 +22,12 @@ paper's figure images.
   chats. Light grey: the paper's line for that domain (Fig. 25 for Llama,
   Fig. 24 for Qwen; mean over its simulated users of the change from each
   user's turn 1; on Qwen the Sonnet 4.5 conversations stop at turn 9).
+  The AI philosophy panels are left out (SHOWN_DOMAINS): in a hand-check, 1 of
+  49 chats the classifier gave that label was about AI philosophy.
+- drift_control: the same change from turn 1 for the drift_turns chats (not
+  split by domain), one panel per model, with three lines: after the chat's
+  original earlier turns, after unrelated earlier turns, and with no earlier
+  turns (go_lenctrl.sh). 95% CI bands, bootstrap over chats.
 - harm_vs_drift_real_turn1: harm_vs_drift_real for turn-1 openings only.
 - capping (the paper's Fig. 10 style, one row per model): harmful rate on the
   paper's own jailbreaks (our run), MHJ and DAN, and the four capability
@@ -81,6 +87,7 @@ PINK = "#eb9c9b"
 BLUE = "#277ed6"
 DARK_GREY = "#5e5d59"
 LIGHT_GREY = "#b0aea5"
+PURPLE = "#9a7fb0"  # The paper's direction arrow, between its red and blue.
 SANS = ["Helvetica Neue", "Helvetica", "Arial", "DejaVu Sans"]
 BENCH_NAMES = {
     "ifeval": "IFEval",
@@ -149,7 +156,7 @@ def fig_drift(res, out, name, series):
         color=LIGHT_GREY,
         ms=4,
         lw=1.5,
-        label="Paper's coding chats (simulated users)",
+        label="Paper's coding chats (synthetic)",
     )
     for run, label, color in series:
         chats = complete_chats(
@@ -646,6 +653,11 @@ PAPER_DOMAINS = {
 }
 
 
+# AI philosophy is left out: in a hand-check, 1 of 49 chats the classifier gave
+# that label was about AI philosophy.
+SHOWN_DOMAINS = [d for d in domain_drift.DOMAINS if d[0] != "ai"]
+
+
 def fig_domains(res, out):
     turns = list(range(1, 13))
     fig = card_figure((11, 6.6))
@@ -653,9 +665,10 @@ def fig_domains(res, out):
     for row, (model, run) in enumerate(DOMAIN_RUNS):
         dom, proj = domain_drift.load(os.path.join(res, run))
         first = None
-        for col, (key, label) in enumerate(domain_drift.DOMAINS):
+        for col, (key, label) in enumerate(SHOWN_DOMAINS):
+            pitch = 0.852 / len(SHOWN_DOMAINS)
             ax = fig.add_axes(
-                [0.11 + 0.213 * col, 0.54 - 0.42 * row, 0.195, 0.3],
+                [0.11 + pitch * col, 0.54 - 0.42 * row, pitch - 0.018, 0.3],
                 sharey=first,
             )
             first = first or ax
@@ -674,7 +687,7 @@ def fig_domains(res, out):
                 ],
                 dtype=float,
             )[:, : len(turns)]
-            (handles["Paper (simulated users)"],) = ax.plot(
+            (handles["Paper (synthetic chats)"],) = ax.plot(
                 turns,
                 np.nanmean(users - users[:, :1], axis=0),
                 "-",
@@ -682,8 +695,8 @@ def fig_domains(res, out):
                 lw=1.5,
             )
             for cond, name, color, style in (
-                ("filler", "Unrelated history", DARK_GREY, "--"),
-                ("real", "Real history", BLUE, "-"),
+                ("filler", "Unrelated earlier turns", DARK_GREY, "--"),
+                ("real", "Original earlier turns", BLUE, "-"),
             ):
                 stats = [(0.0, 0.0, 0.0)]  # Turn 1 is the reference.
                 for k in turns[1:]:
@@ -725,9 +738,7 @@ def fig_domains(res, out):
                 labelleft=not col,
             )
             ax.set_xticks([1, 4, 8, 12])
-            ax.set_title(
-                f"{label} (n = {len(chats)})", fontsize=10.5, color=LABEL, pad=8
-            )
+            ax.set_title(label, fontsize=10.5, color=LABEL, pad=8)
             if row:
                 ax.set_xlabel("Turn", color=AXIS, fontweight="bold", labelpad=6)
             if not col:
@@ -738,7 +749,7 @@ def fig_domains(res, out):
                     labelpad=8,
                 )
                 ax.text(
-                    -0.42,
+                    -0.082 / (pitch - 0.018),  # A fixed distance left of the axis.
                     0.5,
                     model,
                     transform=ax.transAxes,
@@ -749,7 +760,11 @@ def fig_domains(res, out):
                     fontsize=12,
                     fontweight="bold",
                 )
-    order = ["Real history", "Unrelated history", "Paper (simulated users)"]
+    order = [
+        "Original earlier turns",
+        "Unrelated earlier turns",
+        "Paper (synthetic chats)",
+    ]
     fig.legend(
         [handles[n] for n in order],
         order,
@@ -761,6 +776,115 @@ def fig_domains(res, out):
         bbox_to_anchor=(0.955, 0.965),
     )
     save(fig, out, "drift_by_domain", tight=False)
+
+
+# Model, the real-history projections, the run with filler/ and nohist/.
+CONTROL_RUNS = [
+    ("Llama 3.3 70B", "drift_turns", "lc_llama"),
+    ("Qwen 3 32B", os.path.join("lc_qwen", "real"), "lc_qwen"),
+]
+CONTROL_LINES = [
+    ("nohist", "No earlier turns", PURPLE, ":"),
+    ("filler", "Unrelated earlier turns", DARK_GREY, "--"),
+    ("real", "Original earlier turns", BLUE, "-"),
+]
+
+
+def fig_control(res, out):
+    """Change from turn 1 by turn: real, unrelated and no earlier turns."""
+    turns = list(range(1, 13))
+    fig = card_figure((10, 4.6))
+    handles = {}
+    for col, (model, real_run, lc_run) in enumerate(CONTROL_RUNS):
+        proj = {"real": {}, "filler": {}, "nohist": {}}
+        for r in read(os.path.join(res, real_run, "projections.jsonl")):
+            if r["proj"] is not None:
+                proj["real"][(r["hash"], r["k"])] = r["proj"]
+        for cond, tag in (("filler", "-f"), ("nohist", "-n")):
+            path = os.path.join(res, lc_run, cond, "projections.jsonl")
+            for r in read(path):
+                if r["proj"] is not None:
+                    target, k = r["hash"].rsplit(tag, 1)
+                    proj[cond][(target, int(k))] = r["proj"]
+        chats = sorted({h for h, k in proj["real"] if k == 1})
+        ax = fig.add_axes([0.135 + 0.445 * col, 0.17, 0.365, 0.62])
+        ax.set_facecolor("none")
+        ax.axhline(0, color=AXIS, lw=0.6, alpha=0.5, zorder=0)
+        for cond, name, color, style in CONTROL_LINES:
+            stats = [(0.0, 0.0, 0.0)]  # Turn 1 is the reference.
+            for k in turns[1:]:
+                stats.append(
+                    domain_drift.ci([
+                        proj[cond][(h, k)] - proj["real"][(h, 1)]
+                        for h in chats
+                        if all((h, k) in proj[c] for c in proj)
+                    ])
+                )
+            ax.fill_between(
+                turns,
+                [v[1] for v in stats],
+                [v[2] for v in stats],
+                color=color,
+                alpha=0.13,
+                lw=0,
+            )
+            (handles[name],) = ax.plot(
+                turns,
+                [v[0] for v in stats],
+                style,
+                color=color,
+                marker="o",
+                ms=3.5,
+                lw=1.6,
+            )
+        for side in ("top", "right"):
+            ax.spines[side].set_visible(False)
+        for side in ("left", "bottom"):
+            ax.spines[side].set_color(AXIS)
+            ax.spines[side].set_linewidth(1.5)
+        ax.tick_params(colors=AXIS, labelcolor=AXIS, length=4, width=1.2)
+        ax.set_xticks([1, 4, 8, 12])
+        ax.set_title(model, fontsize=11, color=LABEL, pad=8)
+        ax.set_xlabel("Turn", color=AXIS, fontweight="bold", labelpad=6)
+        if not col:
+            ax.set_ylabel(
+                "Change from Turn 1", color=AXIS, fontweight="bold", labelpad=30
+            )
+            # The paper's red-to-blue direction arrow, beside the axis.
+            ax.annotate(
+                "",
+                xy=(-0.13, 0.8),
+                xytext=(-0.13, 0.2),
+                xycoords="axes fraction",
+                arrowprops=dict(arrowstyle="<->", color="#9a7fb0", lw=1),
+            )
+            for y, va, text, color in (
+                (0.82, "bottom", "Assistant-like", BLUE),
+                (0.18, "top", "Role-playing", RED),
+            ):
+                ax.text(
+                    -0.13,
+                    y,
+                    text,
+                    transform=ax.transAxes,
+                    rotation=90,
+                    ha="center",
+                    va=va,
+                    color=color,
+                    fontsize=8.5,
+                )
+    order = [name for _, name, _, _ in reversed(CONTROL_LINES)]
+    fig.legend(
+        [handles[n] for n in order],
+        order,
+        frameon=False,
+        fontsize=9.5,
+        labelcolor=LABEL,
+        ncol=3,
+        loc="upper right",
+        bbox_to_anchor=(0.955, 0.965),
+    )
+    save(fig, out, "drift_control", tight=False)
 
 
 def main():
@@ -801,9 +925,10 @@ def main():
     )
     fig_capping(res, out)
     fig_domains(res, out)
+    fig_control(res, out)
     fig_sweep(res, out)
     fig_sweep_scatter(res, out)
-    print(f"wrote 9 figures to {out}")
+    print(f"wrote 10 figures to {out}")
 
 
 if __name__ == "__main__":
